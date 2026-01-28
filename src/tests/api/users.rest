@@ -1,0 +1,21 @@
+### POST request to create a new user 
+POST http://localhost:3000/api/v1/auth/register
+Content-Type: application/json
+
+{
+    "email": "test1@email.com",
+    "password": "123456789",
+    "name": "admin1"
+}
+
+### POST Login a user
+POST  http://localhost:3000/api/v1/auth/login
+Content-Type: application/json
+
+{
+    "email": "test1@email.com",
+    "password": "123456789"
+}
+
+### POST Logout a user
+POST  http://localhost:3000/api/v1/auth/logout
