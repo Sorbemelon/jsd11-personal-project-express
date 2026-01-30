@@ -1,4 +1,3 @@
-import fs from "fs/promises";
 import path from "path";
 import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
@@ -7,72 +6,105 @@ import { AppError } from "../../utils/error.js";
 
 /**
  * Main entry
- * Converts uploaded file → normalized text chunks
+ * Converts uploaded file (buffer) → normalized text + JSON + chunks
  */
 export const transformFileToChunks = async (file, options = {}) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
+  let rawJson;
   let text = "";
 
   switch (ext) {
-    case ".txt":
-      text = await parseTXT(file.path);
+    case ".txt": {
+      text = parseTXT(file.buffer);
+      rawJson = { text };
       break;
+    }
 
-    case ".pdf":
-      text = await parsePDF(file.path);
+    case ".pdf": {
+      const result = await parsePDF(file.buffer);
+      text = result.text;
+      rawJson = {
+        metadata: result.metadata,
+        pages: result.numpages,
+      };
       break;
+    }
 
-    case ".docx":
-      text = await parseDOCX(file.path);
+    case ".docx": {
+      const result = await parseDOCX(file.buffer);
+      text = result.text;
+      rawJson = result.raw;
       break;
+    }
 
-    case ".csv":
-      text = await parseCSV(file.path, ",");
+    case ".csv": {
+      const result = parseCSV(file.buffer, ",");
+      text = result.text;
+      rawJson = result.rows;
       break;
+    }
 
-    case ".tsv":
-      text = await parseCSV(file.path, "\t");
+    case ".tsv": {
+      const result = parseCSV(file.buffer, "\t");
+      text = result.text;
+      rawJson = result.rows;
       break;
+    }
 
     default:
-      throw new AppError(
-        `Unsupported file type: ${ext}`,
-        400
-      );
+      throw new AppError(`Unsupported file type: ${ext}`, 400);
   }
 
-  return splitIntoChunks(text, options);
+  const chunks = splitIntoChunks(text, options);
+
+  return {
+    content: normalizeText(text),
+    rawJson,
+    chunks,
+  };
 };
 
 /* ---------------- parsers ---------------- */
 
-const parseTXT = async (filePath) => {
-  return fs.readFile(filePath, "utf-8");
+const parseTXT = (buffer) => {
+  return buffer.toString("utf-8");
 };
 
-const parsePDF = async (filePath) => {
-  const buffer = await fs.readFile(filePath);
+const parsePDF = async (buffer) => {
   const parsed = await PDFParse(buffer);
-  return parsed.text;
+  return parsed;
 };
 
-const parseDOCX = async (filePath) => {
-  const result = await mammoth.extractRawText({
-    path: filePath,
-  });
-  return result.value;
+const parseDOCX = async (buffer) => {
+  const result = await mammoth.extractRawText({ buffer });
+
+  return {
+    text: result.value,
+    raw: {
+      messages: result.messages,
+    },
+  };
 };
 
-const parseCSV = async (filePath, delimiter) => {
-  const content = await fs.readFile(filePath, "utf-8");
+const parseCSV = (buffer, delimiter) => {
+  const content = buffer.toString("utf-8");
+
   const records = parse(content, {
     delimiter,
     skip_empty_lines: true,
   });
 
-  // Convert rows → readable text
-  return records.map(row => row.join(" | ")).join("\n");
+  return {
+    rows: records,
+    text: records.map((row) => row.join(" | ")).join("\n"),
+  };
+};
+
+/* ---------------- normalization ---------------- */
+
+const normalizeText = (text) => {
+  return text.replace(/\s+/g, " ").trim();
 };
 
 /* ---------------- chunking ---------------- */
@@ -82,14 +114,9 @@ const parseCSV = async (filePath, delimiter) => {
  */
 const splitIntoChunks = (
   text,
-  {
-    chunkSize = 500,
-    overlap = 50,
-  } = {}
+  { chunkSize = 500, overlap = 50 } = {}
 ) => {
-  const cleaned = text
-    .replace(/\s+/g, " ")
-    .trim();
+  const cleaned = normalizeText(text);
 
   const chunks = [];
   let start = 0;
@@ -104,5 +131,5 @@ const splitIntoChunks = (
     start += chunkSize - overlap;
   }
 
-  return chunks.filter(c => c.content.length > 0);
+  return chunks.filter((c) => c.content.length > 0);
 };

@@ -1,4 +1,3 @@
-// src/models/Chunk.model.js
 import mongoose from "mongoose";
 
 const chunkSchema = new mongoose.Schema(
@@ -10,6 +9,7 @@ const chunkSchema = new mongoose.Schema(
       index: true,
     },
 
+    // folder | file | chunk
     type: {
       type: String,
       enum: ["folder", "file", "chunk"],
@@ -30,21 +30,20 @@ const chunkSchema = new mongoose.Schema(
       index: true,
     },
 
-    // File metadata
-    mimeType: {
-      type: String,
-    },
+    /* ---------- FILE METADATA ---------- */
+    mimeType: String,
+    size: Number,
 
-    size: {
-      type: Number, // bytes
-    },
-
-    // Raw text (for chunk / RAG)
+    /* ---------- TRANSFORMED CONTENT ---------- */
     content: {
-      type: String,
+      type: String, // normalized text (for RAG/search)
     },
 
-    // Vector embedding (future)
+    rawJson: {
+      type: mongoose.Schema.Types.Mixed, // original transformed JSON
+    },
+
+    /* ---------- EMBEDDING STATUS ---------- */
     embedding: {
       status: {
         type: String,
@@ -54,17 +53,28 @@ const chunkSchema = new mongoose.Schema(
       dims: { type: Number, default: 3072 },
       vector: { type: [Number], select: false },
       attempts: { type: Number, default: 0 },
-      lastAttemptAt: { type: Date, default: null },
-      updatedAt: { type: Date, default: null },
-      lastError: { type: String, default: null },
+      lastAttemptAt: Date,
+      updatedAt: Date,
+      lastError: String,
     },
 
-    // Storage
-    storagePath: {
-      type: String,
+    /* ---------- STORAGE ---------- */
+    storage: {
+      provider: {
+        type: String,
+        enum: ["s3"],
+        default: "s3",
+      },
+      uri: {
+        type: String, // S3 full URL
+        required: true,
+      },
+      key: {
+        type: String, // S3 object key
+        required: true,
+      },
     },
 
-    // Ordering in folder
     order: {
       type: Number,
       default: 0,
@@ -82,10 +92,9 @@ const chunkSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for folder tree + search
+/* ---------- INDEXES ---------- */
 chunkSchema.index({ userId: 1, parentId: 1 });
 chunkSchema.index({ userId: 1, type: 1 });
 chunkSchema.index({ name: "text", content: "text" });
 
-const Chunk = mongoose.model("Chunk", chunkSchema);
-export default Chunk;
+export default mongoose.model("Chunk", chunkSchema);

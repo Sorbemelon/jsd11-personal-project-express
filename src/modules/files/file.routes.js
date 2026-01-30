@@ -17,17 +17,20 @@ const router = Router();
 router.use(authenticate);
 
 /**
- * GET    /api/v1/files
+ * GET /api/v1/files
  */
 router.get("/", listFiles);
 
 /**
- * GET    /api/v1/files/:id
+ * GET /api/v1/files/:id
  */
 router.get("/:id", getFileById);
 
 /**
- * POST   /api/v1/files/upload
+ * POST /api/v1/files/upload
+ * multipart/form-data
+ * field name: "file"
+ * optional body: parentId
  */
 router.post(
   "/upload",
@@ -36,7 +39,8 @@ router.post(
 );
 
 /**
- * PATCH  /api/v1/files/:id/move
+ * PATCH /api/v1/files/:id/move
+ * body: { targetFolderId }
  */
 router.patch("/:id/move", moveFile);
 

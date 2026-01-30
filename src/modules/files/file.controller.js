@@ -35,7 +35,7 @@ export const uploadFile = asyncHandler(async (req, res) => {
   const file = await fileService.uploadFile({
     userId: req.user.id,
     file: req.file,
-    folderId: req.body.folderId,
+    parentId: req.body.parentId || null,
   });
 
   res.status(201).json({

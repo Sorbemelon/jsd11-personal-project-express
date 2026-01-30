@@ -3,12 +3,13 @@ import * as folderService from "./folder.service.js";
 
 /**
  * POST /api/v1/folders
+ * body: { name, parentId? }
  */
 export const createFolder = asyncHandler(async (req, res) => {
   const folder = await folderService.createFolder({
     userId: req.user.id,
     name: req.body.name,
-    parentId: req.body.parentId,
+    parentId: req.body.parentId || null,
   });
 
   res.status(201).json({
@@ -50,12 +51,13 @@ export const getFolderById = asyncHandler(async (req, res) => {
 
 /**
  * PATCH /api/v1/folders/:id/move
+ * body: { targetParentId }
  */
 export const moveFolder = asyncHandler(async (req, res) => {
   const folder = await folderService.moveFolder({
     userId: req.user.id,
     folderId: req.params.id,
-    targetParentId: req.body.targetParentId,
+    targetParentId: req.body.targetParentId || null,
   });
 
   res.json({
@@ -66,6 +68,7 @@ export const moveFolder = asyncHandler(async (req, res) => {
 
 /**
  * DELETE /api/v1/folders/:id
+ * (soft delete + async S3 cleanup)
  */
 export const deleteFolder = asyncHandler(async (req, res) => {
   await folderService.deleteFolder({
@@ -76,5 +79,21 @@ export const deleteFolder = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: "Folder deleted successfully",
+  });
+});
+
+/**
+ * GET /api/v1/folders/tree
+ * GET /api/v1/folders/:id/tree
+ */
+export const getFolderTree = asyncHandler(async (req, res) => {
+  const tree = await folderService.getFolderTree({
+    userId: req.user.id,
+    folderId: req.params.id || null,
+  });
+
+  res.json({
+    success: true,
+    data: tree,
   });
 });

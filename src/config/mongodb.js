@@ -4,7 +4,7 @@ export async function connectDB() {
   const uri = process.env.MONGODB_URI;
 
   try {
-    await mongoose.connect(uri, { dbName: "jsd11-express-app" });
+    await mongoose.connect(uri, { dbName: "ai-transform-express-app" });
     console.log("MongoDB connected ✅ 🎉");
   } catch (error) {
     console.error("MongoDB connection error ❌", error);

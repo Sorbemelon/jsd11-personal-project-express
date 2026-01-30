@@ -1,73 +1,106 @@
 import axios from "axios";
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
-const EMBEDDING_MODEL = "gemini-embedding-001";
-const GENERATION_MODEL = "gemini-2.5-flash";
+const EMBEDDING_MODEL = "models/embedding-001";
+const GENERATION_MODEL = "models/gemini-2.5-flash";
 const EXPECTED_EMBEDDING_DIMS = 3072;
 
+/* ======================================================
+   HELPERS
+====================================================== */
+
+const isRetryableError = (err) => {
+  const status = err?.response?.status;
+  return (
+    !status || // network error
+    status === 429 || // rate limit
+    (status >= 500 && status < 600)
+  );
+};
+
+const buildApiKeys = (...keys) => keys.filter(Boolean);
+
+/* ======================================================
+   EMBEDDINGS
+====================================================== */
+
 export const embedText = async ({
-  apiKey = process.env.GEMINI_API_KEY,
+  apiKey1 = process.env.GEMINI_API_KEY1,
+  apiKey2 = process.env.GEMINI_API_KEY2,
+  apiKey3 = process.env.GEMINI_API_KEY3,
+  apiKey4 = process.env.GEMINI_API_KEY4,
+  apiKey5 = process.env.GEMINI_API_KEY5,
   text,
   baseUrl = process.env.GEMINI_API_BASE_URL || DEFAULT_BASE_URL,
   model = process.env.GEMINI_EMBEDDING_MODEL || EMBEDDING_MODEL,
-  timeoutMs = Number(process.env.GEMINI_HTTP_TIMEOUT_MS || 15000), // 15 seconds
+  timeoutMs = Number(process.env.GEMINI_HTTP_TIMEOUT_MS || 25000),
 } = {}) => {
-  const trimmed = String(text || "").trim();
-
-  if (!trimmed) {
-    const error = new Error("embedText requires non-empty text");
-    error.name = "ValidationError";
-    error.status = 400;
-    throw error;
-  }
-
-  if (!apiKey) {
-    const error = new Error("GEMINI_API_KEY must be set to compute embeddings");
-    error.name = "ConfigurationError";
-    error.status = 500;
-    throw error;
-  }
-
-  const url = `${baseUrl}/v1beta/models/${encodeURIComponent(
-    model
-  )}:embedContent?key=${encodeURIComponent(apiKey)}`;
-
-  const { data } = await axios.post(
-    url,
-    {
-      content: {
-        parts: [{ text: trimmed }],
-      },
-    },
-    {
-      timeout: timeoutMs,
-      headers: {
-        "Content-Type": "application/json",
-      },
-    }
+  const apiKeys = buildApiKeys(
+    apiKey1,
+    apiKey2,
+    apiKey3,
+    apiKey4,
+    apiKey5
   );
+
+  const trimmed = String(text || "").trim();
+  if (!trimmed) {
+    const err = new Error("embedText requires non-empty text");
+    err.status = 400;
+    throw err;
+  }
+
+  if (!apiKeys.length) {
+    throw new Error("At least one GEMINI_API_KEY must be configured");
+  }
+
+  const requestEmbedding = async (key) => {
+    const { data } = await axios.post(
+      `${baseUrl}/v1beta/models/${model}:embedContent?key=${key}`,
+      {
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: trimmed }],
+          },
+        ],
+      },
+      { timeout: timeoutMs }
+    );
+    return data;
+  };
+
+  let data, lastError;
+
+  for (const key of apiKeys) {
+    try {
+      data = await requestEmbedding(key);
+      break;
+    } catch (err) {
+      lastError = err;
+      if (!isRetryableError(err)) break;
+    }
+  }
+
+  if (!data) {
+    const err = new Error("Failed to compute embedding");
+    err.status = 502;
+    err.details = lastError?.response?.data;
+    throw err;
+  }
 
   const vector =
     data?.embedding?.values ||
-    data?.embedding?.value ||
-    data?.embeddings?.[0]?.values ||
-    data?.embeddings?.[0]?.value;
+    data?.embeddings?.[0]?.values;
 
   if (!Array.isArray(vector)) {
-    const error = new Error("Unexpected Gemini embeddings response shape");
-    error.name = "UpstreamError";
-    error.status = 502;
-    error.details = { receivedKeys: data ? Object.keys(data) : null };
-    throw error;
+    throw new Error("Unexpected Gemini embedding response shape");
   }
 
   if (vector.length !== EXPECTED_EMBEDDING_DIMS) {
-    const error = new Error(
-      `Embedding dimension mismatch: expected ${EXPECTED_EMBEDDING_DIMS}, got ${vector.length}`
+    throw new Error(
+      `Embedding dims mismatch: expected ${EXPECTED_EMBEDDING_DIMS}, got ${vector.length}`
     );
-    error.name = "UpstreamError";
-    error.status = 502;
-    throw error;
   }
 
   return vector;
@@ -75,71 +108,83 @@ export const embedText = async ({
 
 export const GEMINI_EMBEDDING_DIMS = EXPECTED_EMBEDDING_DIMS;
 
+/* ======================================================
+   TEXT GENERATION
+====================================================== */
+
 export const generateText = async ({
-  apiKey = process.env.GEMINI_API_KEY,
+  apiKey1 = process.env.GEMINI_API_KEY1,
+  apiKey2 = process.env.GEMINI_API_KEY2,
+  apiKey3 = process.env.GEMINI_API_KEY3,
+  apiKey4 = process.env.GEMINI_API_KEY4,
+  apiKey5 = process.env.GEMINI_API_KEY5,
   prompt,
+  systemInstruction,
   baseUrl = process.env.GEMINI_API_BASE_URL || DEFAULT_BASE_URL,
   model = process.env.GEMINI_GENERATION_MODEL || GENERATION_MODEL,
-  timeoutMs = Number(process.env.GEMINI_HTTP_TIMEOUT_MS || 20000), // 20 seconds
+  timeoutMs = Number(process.env.GEMINI_HTTP_TIMEOUT_MS || 20000),
   temperature = Number(process.env.GEMINI_TEMPERATURE || 0.2),
+  maxOutputTokens = Number(process.env.GEMINI_MAX_TOKENS || 1024),
 } = {}) => {
-  const trimmed = String(prompt || "").trim();
-
-  if (!trimmed) {
-    const error = new Error("generateText requires non-empty prompt");
-    error.name = "ValidationError";
-    error.status = 400;
-    throw error;
-  }
-
-  if (!apiKey) {
-    const error = new Error("GEMINI_API_KEY must be set to generate response");
-    error.name = "ConfigurationError";
-    error.status = 500;
-    throw error;
-  }
-
-  const url = `${baseUrl}/v1beta/models/${encodeURIComponent(
-    model
-  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const { data } = await axios.post(
-    url,
-    {
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: trimmed }],
-        },
-      ],
-      generationConfig: {
-        temperature,
-      },
-    },
-    {
-      timeout: timeoutMs,
-      headers: {
-        "Content-Type": "application/json",
-      },
-    }
+  const apiKeys = buildApiKeys(
+    apiKey1,
+    apiKey2,
+    apiKey3,
+    apiKey4,
+    apiKey5
   );
 
-  const parts = data?.candidates?.[0]?.content?.parts;
-  const text = Array.isArray(parts)
-    ? parts
-        .map((p) => p?.text)
-        .filter(Boolean)
-        .join("")
-    : null;
-
-  if (!text) {
-    const error = new Error("Unexpected Gemini generateContent response shape");
-    error.name = "UpstreamError";
-    error.status = 502;
-    error.details = { receivedKeys: data ? Object.keys(data) : null };
-
-    throw error;
+  const trimmed = String(prompt || "").trim();
+  if (!trimmed) {
+    throw new Error("generateText requires non-empty prompt");
   }
 
-  return String(text).trim();
+  const requestGeneration = async (key) => {
+    const { data } = await axios.post(
+      `${baseUrl}/v1beta/models/${model}:generateContent?key=${key}`,
+      {
+        systemInstruction: systemInstruction
+          ? { parts: [{ text: systemInstruction }] }
+          : undefined,
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: trimmed }],
+          },
+        ],
+        generationConfig: {
+          temperature,
+          maxOutputTokens,
+        },
+      },
+      { timeout: timeoutMs }
+    );
+    return data;
+  };
+
+  let data, lastError;
+
+  for (const key of apiKeys) {
+    try {
+      data = await requestGeneration(key);
+      break;
+    } catch (err) {
+      lastError = err;
+      if (!isRetryableError(err)) break;
+    }
+  }
+
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.map((p) => p?.text)
+    .filter(Boolean)
+    .join("");
+
+  if (!text) {
+    const err = new Error("Invalid Gemini generation response");
+    err.status = 502;
+    err.details = lastError?.response?.data;
+    throw err;
+  }
+
+  return text.trim();
 };

@@ -11,6 +11,13 @@ router.use(authenticate);
 
 /**
  * POST /api/v1/chat
+ *
+ * Body:
+ * {
+ *   message: string,
+ *   folderId?: string,
+ *   limit?: number
+ * }
  */
 router.post("/", sendMessage);
 

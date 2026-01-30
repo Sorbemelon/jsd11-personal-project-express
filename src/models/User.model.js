@@ -14,7 +14,7 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: true,
-      select: false, // ⛔ never returned unless explicitly asked
+      select: false,
     },
 
     name: {
@@ -46,8 +46,6 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Optional: compound indexes (future-proofing)
 userSchema.index({ email: 1, isActive: 1 });
 
-const User = mongoose.model("User", userSchema);
-export default User;
+export default mongoose.model("User", userSchema);

@@ -6,6 +6,7 @@ import {
   getFolderById,
   moveFolder,
   deleteFolder,
+  getFolderTree,
 } from "./folder.controller.js";
 
 const router = Router();
@@ -25,6 +26,18 @@ router
   .post(createFolder);
 
 /**
+ * GET /api/v1/folders/tree
+ * (full recursive tree from root)
+ */
+router.get("/tree", getFolderTree);
+
+/**
+ * GET /api/v1/folders/:id/tree
+ * (recursive subtree)
+ */
+router.get("/:id/tree", getFolderTree);
+
+/**
  * GET    /api/v1/folders/:id
  * DELETE /api/v1/folders/:id
  */
@@ -34,7 +47,7 @@ router
   .delete(deleteFolder);
 
 /**
- * PATCH  /api/v1/folders/:id/move
+ * PATCH /api/v1/folders/:id/move
  */
 router.patch("/:id/move", moveFolder);
 
