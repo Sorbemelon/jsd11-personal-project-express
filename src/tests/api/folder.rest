@@ -1,0 +1,27 @@
+### GET all folders
+GET  http://localhost:3000/api/v1/folders
+
+### GET folder tree
+GET  http://localhost:3000/api/v1/folders/tree
+
+### POST to create a new folder
+POST  http://localhost:3000/api/v1/folders
+Content-Type: application/json
+
+{
+    "userId": "697c69a18b0c0cadcd35784b",
+    "name": "test1"
+}
+
+### POST to create a new sub folder
+POST  http://localhost:3000/api/v1/folders
+Content-Type: application/json
+
+{
+    "userId": "697c69a18b0c0cadcd35784b",
+    "name": "test3",
+    "parentId": ""
+}
+
+### DELETE a specific folder
+DELETE  http://localhost:3000/api/v1/folders/697ce434f4e72afd01c706e7

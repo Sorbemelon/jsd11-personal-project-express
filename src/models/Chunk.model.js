@@ -31,8 +31,19 @@ const chunkSchema = new mongoose.Schema(
     },
 
     /* ---------- FILE METADATA ---------- */
-    mimeType: String,
-    size: Number,
+    mimeType: {
+      type: String,
+      required: function () {
+        return this.type === "file";
+      },
+    },
+
+    size: {
+      type: Number,
+      required: function () {
+        return this.type === "file";
+      },
+    },
 
     /* ---------- TRANSFORMED CONTENT ---------- */
     content: {
@@ -58,20 +69,26 @@ const chunkSchema = new mongoose.Schema(
       lastError: String,
     },
 
-    /* ---------- STORAGE ---------- */
+    /* ---------- STORAGE (FILES ONLY) ---------- */
     storage: {
       provider: {
         type: String,
         enum: ["s3"],
         default: "s3",
       },
+
       uri: {
         type: String, // S3 full URL
-        required: true,
+        required: function () {
+          return this.type === "file";
+        },
       },
+
       key: {
         type: String, // S3 object key
-        required: true,
+        required: function () {
+          return this.type === "file";
+        },
       },
     },
 

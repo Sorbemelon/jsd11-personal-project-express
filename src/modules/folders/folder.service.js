@@ -1,12 +1,17 @@
 import Chunk from "../../models/Chunk.model.js";
 import { AppError } from "../../utils/error.js";
-import { deleteFromS3 } from "../../utils/s3.js";
+import {
+  createS3Folder,
+  deletePrefixFromS3,
+} from "../../utils/s3.js";
 
 /* ======================================================
    CREATE
 ====================================================== */
 export const createFolder = async ({ userId, name, parentId = null }) => {
   if (!name) throw new AppError("Folder name is required", 400);
+
+  let parentPath = "";
 
   if (parentId) {
     const parent = await Chunk.findOne({
@@ -15,14 +20,27 @@ export const createFolder = async ({ userId, name, parentId = null }) => {
       type: "folder",
       isDeleted: false,
     });
+
     if (!parent) throw new AppError("Parent folder not found", 404);
+    parentPath = parent.storage?.key || "";
   }
 
+  const folderKey = `${parentPath}${name}/`;
+
+  // ✅ create S3 "folder" (empty object)
+  await createS3Folder(folderKey);
+
+  // ✅ create DB record
   return Chunk.create({
     userId,
     type: "folder",
     name,
     parentId,
+    storage: {
+      provider: "s3",
+      key: folderKey,
+      uri: `${process.env.AWS_S3_BASE_URL}/${folderKey}`,
+    },
     isDeleted: false,
   });
 };
@@ -74,8 +92,8 @@ export const moveFolder = async ({ userId, folderId, targetParentId }) => {
       type: "folder",
       isDeleted: false,
     });
-    if (!target) throw new AppError("Target folder not found", 404);
 
+    if (!target) throw new AppError("Target folder not found", 404);
     if (String(target._id) === String(folder._id)) {
       throw new AppError("Cannot move folder into itself", 400);
     }
@@ -89,17 +107,26 @@ export const moveFolder = async ({ userId, folderId, targetParentId }) => {
 };
 
 /* ======================================================
-   DELETE (Soft + Async S3)
+   DELETE (Hard delete + async S3 prefix cleanup)
 ====================================================== */
 export const deleteFolder = async ({ userId, folderId }) => {
   const folder = await getFolderById({ userId, folderId });
 
-  await softDeleteRecursively(userId, folder._id);
-  folder.isDeleted = true;
-  await folder.save();
+  // 1️⃣ Hard delete DB tree (folders + files)
+  await deleteRecursively(userId, folder._id);
 
-  // non-blocking S3 cleanup
-  setImmediate(() => cleanupS3(userId, folder._id));
+  // 2️⃣ Async S3 cleanup by PREFIX
+  setImmediate(async () => {
+    try {
+      await deletePrefixFromS3(folder.storage.key);
+    } catch (err) {
+      console.error(
+        "S3 folder cleanup failed:",
+        folder.storage.key,
+        err.message
+      );
+    }
+  });
 
   return { success: true };
 };
@@ -123,20 +150,29 @@ export const getFolderTree = async ({ userId, folderId = null }) => {
    HELPERS
 ====================================================== */
 
-const softDeleteRecursively = async (userId, parentId) => {
+const deleteRecursively = async (userId, parentId) => {
   const nodes = await Chunk.find({
     userId,
     parentId,
-    isDeleted: false,
   });
 
   for (const node of nodes) {
     if (node.type === "folder") {
-      await softDeleteRecursively(userId, node._id);
+      await deleteRecursively(userId, node._id);
     }
-    node.isDeleted = true;
-    await node.save();
   }
+
+  // delete children first
+  await Chunk.deleteMany({
+    userId,
+    parentId,
+  });
+
+  // delete the folder itself
+  await Chunk.deleteOne({
+    userId,
+    _id: parentId,
+  });
 };
 
 const ensureNotDescendant = async (sourceId, targetId) => {
@@ -190,25 +226,4 @@ const countFolderStats = async (userId, folderId) => {
   ]);
 
   return { fileCount: files, folderCount: folders };
-};
-
-/* ======================================================
-   S3 CLEANUP (DELETED ONLY)
-====================================================== */
-const cleanupS3 = async (userId, parentId) => {
-  const nodes = await Chunk.find({ userId, parentId });
-
-  for (const node of nodes) {
-    if (node.type === "file" && node.storage?.key) {
-      try {
-        await deleteFromS3(node.storage.key);
-      } catch (err) {
-        console.error("S3 delete failed:", node.storage.key, err.message);
-      }
-    }
-
-    if (node.type === "folder") {
-      await cleanupS3(userId, node._id);
-    }
-  }
 };
