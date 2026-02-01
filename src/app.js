@@ -4,7 +4,7 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 
 import { router as apiRoutes } from "./routes/index.js";
-import { limiter } from "./middlewares/rateLimiter.js";
+import { apiLimiter } from "./middlewares/rateLimiter.js";
 import { errorHandler } from "./utils/error.js";
 import { AppError } from "./utils/error.js";
 
@@ -28,7 +28,7 @@ app.use(
 );
 
 // Rate limiting
-app.use(limiter);
+app.use(apiLimiter);
 
 // Body + cookies
 app.use(express.json());

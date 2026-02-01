@@ -6,6 +6,7 @@ import {
   verifyRefreshToken,
 } from "../../utils/jwt.js";
 import { AppError } from "../../utils/error.js";
+import { createFolder } from "../folders/folder.service.js";
 
 export const register = async ({ email, password, name }) => {
   const existing = await User.findOne({ email });
@@ -15,12 +16,33 @@ export const register = async ({ email, password, name }) => {
 
   const hashed = await hashPassword(password);
 
+  // 1️⃣ Create user
   const user = await User.create({
     email,
     password: hashed,
     name,
   });
 
+  try {
+    // 2️⃣ Create root folder named after user
+    await createFolder({
+      userId: user._id,
+      name: name,
+      parentId: null,
+      newUser: true
+    });
+  } catch (err) {
+    // 🔴 Rollback user if folder creation fails
+    await User.findByIdAndDelete(user._id);
+
+    console.error("Root folder creation failed:", err);
+    throw new AppError(
+      "Account setup failed. Please try again.",
+      500
+    );
+  }
+
+  // 3️⃣ Tokens
   const accessToken = signAccessToken(user);
   const refreshToken = signRefreshToken(user);
 

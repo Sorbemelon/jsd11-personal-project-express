@@ -8,7 +8,7 @@ import {
 /* ======================================================
    CREATE
 ====================================================== */
-export const createFolder = async ({ userId, name, parentId = null }) => {
+export const createFolder = async ({ userId, name, parentId = null, newUser = null }) => {
   if (!name) throw new AppError("Folder name is required", 400);
 
   let parentPath = "";
@@ -25,7 +25,12 @@ export const createFolder = async ({ userId, name, parentId = null }) => {
     parentPath = parent.storage?.key || "";
   }
 
-  const folderKey = `${parentPath}${name}/`;
+  let folderKey = null
+  if (!newUser) {
+    folderKey = `${parentPath}${name}/`;
+  } else {
+    folderKey = `${parentPath}${name}-${userId}/`;
+  }
 
   // ✅ create S3 "folder" (empty object)
   await createS3Folder(folderKey);
