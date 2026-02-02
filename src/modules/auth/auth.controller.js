@@ -9,10 +9,12 @@ export const register = async (req, res, next) => {
   }
 };
 
+const isProd = process.env.NODE_ENV === "production";
+
 const cookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "strict",
+  secure: isProd,
+  sameSite: isProd ? "none" : "lax",
 };
 
 export const login = async (req, res, next) => {
