@@ -22,6 +22,7 @@ app.use(
       "http://localhost:5173",
       "http://localhost:5174",
       "http://localhost:5175",
+      "https://jsd11-methus-project.vercel.app"
     ],
     credentials: true,
   })
