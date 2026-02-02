@@ -56,7 +56,7 @@ export const register = async ({ email, password, name }) => {
   };
 };
 
-export const login = async ({ email, password }) => {
+export const login = async ({ email, password, remember = false }) => {
   const user = await User.findOne({ email }).select("+password");
 
   if (!user) {
@@ -69,7 +69,9 @@ export const login = async ({ email, password }) => {
   }
 
   const accessToken = signAccessToken(user);
-  const refreshToken = signRefreshToken(user);
+
+  // 🔐 remember-aware refresh token
+  const refreshToken = signRefreshToken(user, remember);
 
   user.refreshToken = refreshToken;
   await user.save();

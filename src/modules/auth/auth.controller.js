@@ -19,19 +19,25 @@ const cookieOptions = {
 
 export const login = async (req, res, next) => {
   try {
+    const { remember = false } = req.body;
+
     const { user, accessToken, refreshToken } =
       await authService.login(req.body);
+
+    const refreshMaxAge = remember
+      ? 7 * 24 * 60 * 60 * 1000 // 7 days
+      : 24 * 60 * 60 * 1000;    // 1 day
 
     res
       .cookie("accessToken", accessToken, {
         ...cookieOptions,
-        maxAge: 15 * 60 * 1000, // 15 min
+        maxAge: 15 * 60 * 1000, // 15 minutes
       })
       .cookie("refreshToken", refreshToken, {
         ...cookieOptions,
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        maxAge: refreshMaxAge,
       })
-      .json({ user });
+      .json({ user, accessToken });
   } catch (err) {
     next(err);
   }
@@ -46,11 +52,11 @@ export const refreshToken = async (req, res, next) => {
     res
       .cookie("accessToken", result.accessToken, {
         ...cookieOptions,
-        maxAge: 15 * 60 * 1000,
+        maxAge: 15 * 60 * 1000, // 15 minutes
       })
       .cookie("refreshToken", result.refreshToken, {
         ...cookieOptions,
-        maxAge: 7 * 24 * 60 * 60 * 1000,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // fallback rotation window
       })
       .json({ ok: true });
   } catch (err) {

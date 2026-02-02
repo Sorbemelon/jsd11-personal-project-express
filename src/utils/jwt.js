@@ -1,17 +1,30 @@
 import jwt from "jsonwebtoken";
 
+/**
+ * Access token
+ * - Always short-lived
+ */
 export const signAccessToken = (user) =>
   jwt.sign(
     { sub: user._id },
     process.env.JWT_ACCESS_SECRET,
-    { expiresIn: "1h" }
+    { expiresIn: "15m" }
   );
 
-export const signRefreshToken = (user) =>
+/**
+ * Refresh token
+ * - Expiry depends on remember flag
+ */
+export const signRefreshToken = (user, remember = false) =>
   jwt.sign(
-    { sub: user._id },
+    {
+      sub: user._id,
+      remember,
+    },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "7d" }
+    {
+      expiresIn: remember ? "7d" : "1d",
+    }
   );
 
 export const verifyAccessToken = (token) =>
