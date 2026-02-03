@@ -17,5 +17,17 @@ Content-Type: application/json
     "password": "123456789"
 }
 
+### POST Login a user
+POST  http://localhost:3000/api/v1/auth/login
+Content-Type: application/json
+
+{
+    "email": "user1@email.com",
+    "password": "555555555"
+}
+
+### GET Check authentication status
+GET  http://localhost:3000/api/v1/auth/me
+
 ### POST Logout a user
 POST  http://localhost:3000/api/v1/auth/logout

@@ -23,10 +23,25 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    /**
+     * 🔐 Stores ONLY the latest refresh token (string)
+     * - Used for rotation & reuse detection
+     * - Never sent to client
+     */
     refreshToken: {
       type: String,
       default: null,
       select: false,
+    },
+
+    /**
+     * 🧠 Optional but recommended
+     * - Increment to invalidate ALL refresh tokens
+     * - Useful for "logout all devices"
+     */
+    tokenVersion: {
+      type: Number,
+      default: 0,
     },
 
     role: {
@@ -46,6 +61,7 @@ const userSchema = new mongoose.Schema(
   }
 );
 
+// 🔍 Efficient auth lookups
 userSchema.index({ email: 1, isActive: 1 });
 
 export default mongoose.model("User", userSchema);

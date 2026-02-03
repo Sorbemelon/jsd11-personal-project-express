@@ -1,5 +1,6 @@
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import * as fileService from "./file.service.js";
+import { AppError } from "../../utils/error.js";
 
 /**
  * GET /api/v1/files
@@ -32,6 +33,13 @@ export const getFileById = asyncHandler(async (req, res) => {
  * POST /api/v1/files/upload
  */
 export const uploadFile = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    throw new AppError("No file uploaded", 400);
+  }
+
+  console.log("req.file:", req.file);
+  console.log("req.body:", req.body);
+
   const file = await fileService.uploadFile({
     userId: req.user.id,
     file: req.file,
@@ -51,7 +59,7 @@ export const moveFile = asyncHandler(async (req, res) => {
   const file = await fileService.moveFile({
     userId: req.user.id,
     fileId: req.params.id,
-    targetFolderId: req.body.targetFolderId,
+    targetFolderId: req.body.targetFolderId || null,
   });
 
   res.json({

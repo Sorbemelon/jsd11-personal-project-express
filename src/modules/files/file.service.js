@@ -1,13 +1,149 @@
+import crypto from "crypto";
+import path from "path";
 import Chunk from "../../models/Chunk.model.js";
 import { AppError } from "../../utils/error.js";
 import { transformFileToChunks } from "./file.transformer.js";
-import { uploadToS3 } from "../../utils/s3.js";
+import { uploadToS3, deleteFromS3 } from "../../utils/s3.js";
 import { embedText } from "../embeddings/embedding.service.js";
+
+/* ======================================================
+   Helpers
+====================================================== */
+
+/**
+ * Generate a collision-safe filename
+ * Example: report.pdf → report_8f3a2c9e.pdf
+ */
+const generateUniqueFileName = async ({
+  userId,
+  parentId,
+  originalName,
+}) => {
+  const ext = path.extname(originalName);
+  const base = path.basename(originalName, ext);
+
+  let filename;
+  let exists = true;
+
+  while (exists) {
+    const suffix = crypto.randomBytes(4).toString("hex");
+    filename = `${base}_${suffix}${ext}`;
+
+    exists = await Chunk.exists({
+      userId,
+      parentId: parentId || null,
+      name: filename,
+      type: "file",
+      isDeleted: false,
+    });
+  }
+
+  return filename;
+};
+
+/* ======================================================
+   Service
+====================================================== */
+
+/**
+ * POST /files/upload
+ */
+export const uploadFile = async ({
+  userId,
+  file,
+  parentId = null,
+}) => {
+  if (!file) {
+    throw new AppError("No file uploaded", 400);
+  }
+
+  /* ---------- resolve parent folder & S3 key ---------- */
+  let folderKey = "";
+
+  if (parentId) {
+    const folder = await Chunk.findOne({
+      _id: parentId,
+      userId,
+      type: "folder",
+      isDeleted: false,
+    });
+
+    if (!folder) {
+      throw new AppError("Target folder not found", 404);
+    }
+
+    folderKey = folder.storage?.key || "";
+  }
+
+  /* ---------- resolve unique filename ---------- */
+  const safeFileName = await generateUniqueFileName({
+    userId,
+    parentId,
+    originalName: file.originalname,
+  });
+
+  /* ---------- upload to S3 ---------- */
+  const s3Result = await uploadToS3({
+    buffer: file.buffer,
+    mimeType: file.mimetype,
+    filename: safeFileName,
+    folderKey, // ✅ ALWAYS A STRING
+  });
+
+  /* ---------- transform file ---------- */
+  const transformed = await transformFileToChunks(file);
+
+  /* ---------- create FILE chunk ---------- */
+  const fileChunk = await Chunk.create({
+    userId,
+    type: "file",
+    name: safeFileName,
+    parentId,
+
+    mimeType: file.mimetype,
+    size: file.size,
+
+    content: transformed.content,
+    rawJson: transformed.rawJson,
+
+    storage: {
+      provider: "s3",
+      key: s3Result.key,
+      uri: s3Result.url,
+    },
+
+    isDeleted: false,
+  });
+
+  /* ---------- create TEXT chunks ---------- */
+  if (transformed.chunks?.length) {
+    for (let i = 0; i < transformed.chunks.length; i++) {
+      const chunk = transformed.chunks[i];
+      const embedding = await embedText(chunk.content);
+
+      await Chunk.create({
+        userId,
+        type: "chunk",
+        parentId: fileChunk._id,
+        name: `${safeFileName} #${i + 1}`,
+        content: chunk.content,
+        order: i,
+        embedding,
+        isDeleted: false,
+        metadata: {
+          sourceFile: fileChunk._id,
+        },
+      });
+    }
+  }
+
+  return fileChunk;
+};
 
 /**
  * GET /files
  */
-export const listFiles = async (userId) => {
+export const listFiles = async ({ userId }) => {
   return Chunk.find({
     userId,
     type: "file",
@@ -18,7 +154,7 @@ export const listFiles = async (userId) => {
 /**
  * GET /files/:id
  */
-export const getFileById = async (userId, fileId) => {
+export const getFileById = async ({ userId, fileId }) => {
   const file = await Chunk.findOne({
     _id: fileId,
     userId,
@@ -34,98 +170,10 @@ export const getFileById = async (userId, fileId) => {
 };
 
 /**
- * POST /files/upload
- * Upload → transform → auto-embed
- */
-export const uploadFile = async ({ userId, file, parentId }) => {
-  if (!file) {
-    throw new AppError("No file uploaded", 400);
-  }
-
-  /* ---------- OPTIONAL: validate parent folder ---------- */
-  if (parentId) {
-    const folder = await Chunk.findOne({
-      _id: parentId,
-      userId,
-      type: "folder",
-      isDeleted: false,
-    });
-
-    if (!folder) {
-      throw new AppError("Target folder not found", 404);
-    }
-  }
-
-  /* ---------- 1️⃣ Upload file to S3 ---------- */
-  const s3Result = await uploadToS3({
-    buffer: file.buffer,
-    mimeType: file.mimetype,
-    originalName: file.originalname,
-    userId,
-  });
-
-  /* ---------- 2️⃣ Transform file → JSON + text ---------- */
-  const transformed = await transformFileToChunks(file);
-  // {
-  //   content: "normalized text",
-  //   rawJson: {...},
-  //   chunks: [{ content: "..." }]
-  // }
-
-  /* ---------- 3️⃣ Create FILE chunk ---------- */
-  const fileChunk = await Chunk.create({
-    userId,
-    type: "file",
-    name: file.originalname,
-    parentId: parentId || null,
-
-    mimeType: file.mimetype,
-    size: file.size,
-
-    content: transformed.content,
-    rawJson: transformed.rawJson,
-
-    storage: {
-      provider: "s3",
-      uri: s3Result.url,
-      key: s3Result.key,
-    },
-
-    isDeleted: false,
-  });
-
-  /* ---------- 4️⃣ Create TEXT chunks + embeddings ---------- */
-  if (transformed.chunks?.length) {
-    for (let index = 0; index < transformed.chunks.length; index++) {
-      const chunk = transformed.chunks[index];
-
-      // 🔹 embed each chunk
-      const embedding = await embedText(chunk.content);
-
-      await Chunk.create({
-        userId,
-        type: "chunk",
-        parentId: fileChunk._id,
-        name: `${file.originalname} #${index + 1}`,
-        content: chunk.content,
-        order: index,
-        embedding,
-        isDeleted: false,
-        metadata: {
-          sourceFile: fileChunk._id,
-        },
-      });
-    }
-  }
-
-  return fileChunk;
-};
-
-/**
  * PATCH /files/:id/move
  */
 export const moveFile = async ({ userId, fileId, targetFolderId }) => {
-  const file = await getFileById(userId, fileId);
+  const file = await getFileById({ userId, fileId });
 
   if (targetFolderId) {
     const folder = await Chunk.findOne({
@@ -138,6 +186,10 @@ export const moveFile = async ({ userId, fileId, targetFolderId }) => {
     if (!folder) {
       throw new AppError("Target folder not found", 404);
     }
+
+    // ⚠️ NOTE:
+    // storage.key is NOT updated here
+    // S3 move can be implemented later if needed
   }
 
   file.parentId = targetFolderId || null;
@@ -148,16 +200,39 @@ export const moveFile = async ({ userId, fileId, targetFolderId }) => {
 
 /**
  * DELETE /files/:id
+ * Hard delete (MongoDB + S3)
  */
 export const deleteFile = async (userId, fileId) => {
-  const file = await getFileById(userId, fileId);
+  const file = await Chunk.findOne({
+    _id: fileId,
+    userId,
+    type: "file",
+  });
 
-  file.isDeleted = true;
-  await file.save();
+  // ✅ Idempotent: already gone
+  if (!file) {
+    return { success: true };
+  }
 
-  // cascade soft-delete child chunks
-  await Chunk.updateMany(
-    { parentId: file._id },
-    { $set: { isDeleted: true } }
-  );
+  /* ---------- delete from S3 first ---------- */
+  const key = file.storage?.key;
+  if (key) {
+    try {
+      await deleteFromS3(key);
+    } catch (err) {
+      console.error("S3 delete failed:", key, err.message);
+      throw new AppError("Failed to delete file from storage", 500);
+    }
+  }
+
+  /* ---------- delete text chunks ---------- */
+  await Chunk.deleteMany({
+    parentId: file._id,
+    type: "chunk",
+  });
+
+  /* ---------- delete file document ---------- */
+  await Chunk.deleteOne({ _id: file._id });
+
+  return { success: true };
 };

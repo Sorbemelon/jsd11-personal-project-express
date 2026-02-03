@@ -1,3 +1,4 @@
+// src/utils/s3.js
 import {
   S3Client,
   PutObjectCommand,
@@ -21,37 +22,76 @@ const BUCKET = process.env.AWS_S3_BUCKET;
 const BASE_URL = process.env.AWS_S3_BASE_URL;
 
 /* ======================================================
-   UPLOAD FILE (SAFE FOR STREAMS / LARGE FILES)
-====================================================== */
+ * Utils
+ * ====================================================== */
+const sanitize = (p = "") =>
+  String(p).replace(/^\/+|\/+$/g, "");
+
+const normalizeFolderKey = (folderKey) => {
+  if (!folderKey) return "";
+
+  // already a string path
+  if (typeof folderKey === "string") {
+    return sanitize(folderKey);
+  }
+
+  // breadcrumb array → use names
+  if (Array.isArray(folderKey)) {
+    return folderKey
+      .map((node) =>
+        typeof node === "string"
+          ? node
+          : node?.name
+      )
+      .filter(Boolean)
+      .map((n) =>
+        n.trim().toLowerCase().replace(/\s+/g, "-")
+      )
+      .join("/");
+  }
+
+  throw new Error("Invalid folderKey type");
+};
+
+/* ======================================================
+ * Build unique S3 object key
+ * ====================================================== */
+const buildObjectKey = (folderKey, filename) => {
+  const cleanFolder = normalizeFolderKey(folderKey);
+
+  const ext = path.extname(filename);
+  const base = path.basename(filename, ext);
+
+  return cleanFolder
+    ? `${cleanFolder}/${base}${ext}`
+    : `${base}${ext}`;
+};
+
+/* ======================================================
+ * Upload file
+ * ====================================================== */
 export const uploadToS3 = async ({
   buffer,
   mimeType,
-  originalName,
-  userId,
-  folderKey = "files",
+  filename,
+  folderKey,
 }) => {
-  if (!buffer) {
-    throw new Error("Missing file buffer for S3 upload");
-  }
+  if (!buffer) throw new Error("Missing file buffer");
+  if (!filename) throw new Error("Missing filename");
 
-  const ext = path.extname(originalName);
-  const filename = `${crypto.randomUUID()}${ext}`;
-  const key = `users/${userId}/${folderKey}/${filename}`;
+  const key = buildObjectKey(folderKey, filename);
 
-  const upload = new Upload({
+  const uploader = new Upload({
     client: s3,
     params: {
       Bucket: BUCKET,
       Key: key,
       Body: buffer,
       ContentType: mimeType,
-      Metadata: {
-        originalName,
-      },
     },
   });
 
-  await upload.done();
+  await uploader.done();
 
   return {
     key,
@@ -60,30 +100,30 @@ export const uploadToS3 = async ({
 };
 
 /* ======================================================
-   CREATE FOLDER (ZERO-BYTE OBJECT)
-====================================================== */
-export const createS3Folder = async (key) => {
-  if (!key) throw new Error("Folder key is required");
-
-  const folderKey = key.endsWith("/") ? key : `${key}/`;
+ * Create S3 folder (zero-byte object)
+ * ====================================================== */
+export const createS3Folder = async (folderPath) => {
+  const key = sanitize(folderPath).endsWith("/")
+    ? sanitize(folderPath)
+    : `${sanitize(folderPath)}/`;
 
   await s3.send(
     new PutObjectCommand({
       Bucket: BUCKET,
-      Key: folderKey,
+      Key: key,
       Body: "",
     })
   );
 
   return {
-    key: folderKey,
-    url: `${BASE_URL}/${folderKey}`,
+    key,
+    url: `${BASE_URL}/${key}`,
   };
 };
 
 /* ======================================================
-   DELETE SINGLE FILE
-====================================================== */
+ * Delete single object
+ * ====================================================== */
 export const deleteFromS3 = async (key) => {
   if (!key) return;
 
@@ -96,40 +136,32 @@ export const deleteFromS3 = async (key) => {
 };
 
 /* ======================================================
-   DELETE FOLDER (PREFIX DELETE — REQUIRED)
-====================================================== */
+ * Delete entire prefix (folder)
+ * ====================================================== */
 export const deletePrefixFromS3 = async (prefix) => {
-  if (!prefix) return;
+  const cleanPrefix = sanitize(prefix);
 
   let continuationToken;
-
   do {
-    const listRes = await s3.send(
+    const res = await s3.send(
       new ListObjectsV2Command({
         Bucket: BUCKET,
-        Prefix: prefix,
+        Prefix: cleanPrefix,
         ContinuationToken: continuationToken,
       })
     );
 
-    const objects = listRes.Contents?.map((obj) => ({
-      Key: obj.Key,
-    }));
+    if (!res.Contents?.length) break;
 
-    if (objects?.length) {
-      await s3.send(
-        new DeleteObjectsCommand({
-          Bucket: BUCKET,
-          Delete: {
-            Objects: objects,
-            Quiet: true,
-          },
-        })
-      );
-    }
+    await s3.send(
+      new DeleteObjectsCommand({
+        Bucket: BUCKET,
+        Delete: {
+          Objects: res.Contents.map((o) => ({ Key: o.Key })),
+        },
+      })
+    );
 
-    continuationToken = listRes.IsTruncated
-      ? listRes.NextContinuationToken
-      : undefined;
+    continuationToken = res.NextContinuationToken;
   } while (continuationToken);
 };

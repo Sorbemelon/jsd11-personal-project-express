@@ -8,6 +8,9 @@ import {
 import { AppError } from "../../utils/error.js";
 import { createFolder } from "../folders/folder.service.js";
 
+/* ======================================================
+   REGISTER
+====================================================== */
 export const register = async ({ email, password, name }) => {
   const existing = await User.findOne({ email });
   if (existing) {
@@ -16,7 +19,6 @@ export const register = async ({ email, password, name }) => {
 
   const hashed = await hashPassword(password);
 
-  // 1️⃣ Create user
   const user = await User.create({
     email,
     password: hashed,
@@ -24,38 +26,26 @@ export const register = async ({ email, password, name }) => {
   });
 
   try {
-    // 2️⃣ Create root folder named after user
     await createFolder({
       userId: user._id,
-      name: name,
+      name,
       parentId: null,
-      newUser: true
+      newUser: true,
     });
   } catch (err) {
-    // 🔴 Rollback user if folder creation fails
     await User.findByIdAndDelete(user._id);
-
-    console.error("Root folder creation failed:", err);
-    throw new AppError(
-      "Account setup failed. Please try again.",
-      500
-    );
+    throw new AppError("Account setup failed", 500);
   }
 
-  // 3️⃣ Tokens
-  const accessToken = signAccessToken(user);
-  const refreshToken = signRefreshToken(user);
-
-  user.refreshToken = refreshToken;
-  await user.save();
-
+  // 🔐 tokens are created by controller
   return {
     user: sanitizeUser(user),
-    accessToken,
-    refreshToken,
   };
 };
 
+/* ======================================================
+   LOGIN
+====================================================== */
 export const login = async ({ email, password, remember = false }) => {
   const user = await User.findOne({ email }).select("+password");
 
@@ -68,45 +58,45 @@ export const login = async ({ email, password, remember = false }) => {
     throw new AppError("Invalid email or password", 401);
   }
 
-  const accessToken = signAccessToken(user);
-
-  // 🔐 remember-aware refresh token
+  // refresh token rotation
   const refreshToken = signRefreshToken(user, remember);
-
   user.refreshToken = refreshToken;
   await user.save();
 
   return {
     user: sanitizeUser(user),
-    accessToken,
-    refreshToken,
   };
 };
 
-export const refreshToken = async ({ refreshToken }) => {
-  if (!refreshToken) {
+/* ======================================================
+   REFRESH TOKEN
+====================================================== */
+export const refreshToken = async ({ token }) => {
+  if (!token) {
     throw new AppError("Refresh token required", 401);
   }
 
-  const payload = verifyRefreshToken(refreshToken);
+  const payload = verifyRefreshToken(token);
 
   const user = await User.findById(payload.sub);
-  if (!user || user.refreshToken !== refreshToken) {
+  if (!user || user.refreshToken !== token) {
     throw new AppError("Invalid refresh token", 401);
   }
 
-  const newAccessToken = signAccessToken(user);
-  const newRefreshToken = signRefreshToken(user);
-
+  // rotate refresh token
+  const newRefreshToken = signRefreshToken(user, payload.remember);
   user.refreshToken = newRefreshToken;
   await user.save();
 
   return {
-    accessToken: newAccessToken,
-    refreshToken: newRefreshToken,
+    userId: user._id,
+    remember: payload.remember,
   };
 };
 
+/* ======================================================
+   LOGOUT
+====================================================== */
 export const logout = async (userId) => {
   const user = await User.findByIdAndUpdate(
     userId,
@@ -119,8 +109,9 @@ export const logout = async (userId) => {
   }
 };
 
-/* ---------------- helpers ---------------- */
-
+/* ======================================================
+   HELPERS
+====================================================== */
 export const sanitizeUser = (user) => {
   const obj = user.toObject();
   delete obj.password;

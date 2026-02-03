@@ -1,9 +1,15 @@
+// auth.middleware.js
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { verifyAccessToken } from "../../utils/jwt.js";
-import User from "../../models/User.model.js";
 import { AppError } from "../../utils/error.js";
+import User from "../../models/User.model.js";
 
 export const authenticate = asyncHandler(async (req, res, next) => {
+  /**
+   * 🔐 Cookie-only authentication
+   * - accessToken is HttpOnly cookie
+   * - do NOT read Authorization header
+   */
   const token = req.cookies?.accessToken;
 
   if (!token) {

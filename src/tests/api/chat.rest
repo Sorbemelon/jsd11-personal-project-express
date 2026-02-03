@@ -3,5 +3,5 @@ POST  http://localhost:3000/api/v1/chat
 Content-Type: application/json
 
  {
-   "message": "Help me please"
+   "message": "What is MERN stack. Give a short answer"
  }

@@ -41,3 +41,6 @@ Content-Type: application/json
 
 ### DELETE a specific folder
 DELETE  http://localhost:3000/api/v1/folders/697ce7bde5fe2f058b6f48f7
+
+### DELETE a specific file
+DELETE  http://localhost:3000/api/v1/files/698178580892007c27604f7b

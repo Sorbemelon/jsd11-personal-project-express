@@ -8,10 +8,17 @@ import {
 /* ======================================================
    CREATE
 ====================================================== */
-export const createFolder = async ({ userId, name, parentId = null, newUser = null }) => {
-  if (!name) throw new AppError("Folder name is required", 400);
+export const createFolder = async ({
+  userId,
+  name,
+  parentId = null,
+  newUser = null,
+}) => {
+  if (!name?.trim()) {
+    throw new AppError("Folder name is required", 400);
+  }
 
-  let parentPath = "";
+  let parentKey = "";
 
   if (parentId) {
     const parent = await Chunk.findOne({
@@ -21,25 +28,24 @@ export const createFolder = async ({ userId, name, parentId = null, newUser = nu
       isDeleted: false,
     });
 
-    if (!parent) throw new AppError("Parent folder not found", 404);
-    parentPath = parent.storage?.key || "";
+    if (!parent) {
+      throw new AppError("Parent folder not found", 404);
+    }
+
+    parentKey = parent.storage?.key || "";
   }
 
-  let folderKey = null
-  if (!newUser) {
-    folderKey = `${parentPath}${name}/`;
-  } else {
-    folderKey = `${parentPath}${name}-${userId}/`;
-  }
+  const safeName = name.trim();
+  const folderKey = newUser
+    ? `${parentKey}${safeName}-${userId}/`
+    : `${parentKey}${safeName}/`;
 
-  // ✅ create S3 "folder" (empty object)
   await createS3Folder(folderKey);
 
-  // ✅ create DB record
   return Chunk.create({
     userId,
     type: "folder",
-    name,
+    name: safeName,
     parentId,
     storage: {
       provider: "s3",
@@ -61,11 +67,17 @@ export const getFolderById = async ({ userId, folderId }) => {
     isDeleted: false,
   });
 
-  if (!folder) throw new AppError("Folder not found", 404);
+  if (!folder) {
+    throw new AppError("Folder not found", 404);
+  }
+
   return folder;
 };
 
-export const listFolderContents = async ({ userId, parentId = null }) => {
+export const listFolderContents = async ({
+  userId,
+  parentId = null,
+}) => {
   const items = await Chunk.find({
     userId,
     parentId,
@@ -77,17 +89,25 @@ export const listFolderContents = async ({ userId, parentId = null }) => {
     items.map(async (item) => {
       if (item.type === "folder") {
         const stats = await countFolderStats(userId, item._id);
-        return { ...item.toObject(), ...stats };
+        return {
+          ...item.toObject(),
+          ...stats,
+        };
       }
-      return item;
+
+      return item.toObject();
     })
   );
 };
 
 /* ======================================================
-   MOVE
+   MOVE (DB ONLY — S3 KEYS ARE IMMUTABLE)
 ====================================================== */
-export const moveFolder = async ({ userId, folderId, targetParentId }) => {
+export const moveFolder = async ({
+  userId,
+  folderId,
+  targetParentId,
+}) => {
   const folder = await getFolderById({ userId, folderId });
 
   if (targetParentId) {
@@ -98,7 +118,10 @@ export const moveFolder = async ({ userId, folderId, targetParentId }) => {
       isDeleted: false,
     });
 
-    if (!target) throw new AppError("Target folder not found", 404);
+    if (!target) {
+      throw new AppError("Target folder not found", 404);
+    }
+
     if (String(target._id) === String(folder._id)) {
       throw new AppError("Cannot move folder into itself", 400);
     }
@@ -108,41 +131,50 @@ export const moveFolder = async ({ userId, folderId, targetParentId }) => {
 
   folder.parentId = targetParentId || null;
   await folder.save();
+
   return folder;
 };
 
 /* ======================================================
-   DELETE (Hard delete + async S3 prefix cleanup)
+   DELETE (Hard delete + async S3 cleanup)
 ====================================================== */
 export const deleteFolder = async ({ userId, folderId }) => {
   const folder = await getFolderById({ userId, folderId });
 
-  // 1️⃣ Hard delete DB tree (folders + files)
   await deleteRecursively(userId, folder._id);
 
-  // 2️⃣ Async S3 cleanup by PREFIX
-  setImmediate(async () => {
-    try {
-      await deletePrefixFromS3(folder.storage.key);
-    } catch (err) {
-      console.error(
-        "S3 folder cleanup failed:",
-        folder.storage.key,
-        err.message
-      );
-    }
-  });
+  const prefix = folder.storage?.key;
+  if (prefix) {
+    setImmediate(async () => {
+      try {
+        await deletePrefixFromS3(prefix);
+      } catch (err) {
+        console.error(
+          "S3 folder cleanup failed:",
+          prefix,
+          err.message
+        );
+      }
+    });
+  }
 
   return { success: true };
 };
 
 /* ======================================================
-   TREE
+   TREE (STRUCTURE ONLY — NO STORAGE)
 ====================================================== */
-export const getFolderTree = async ({ userId, folderId = null }) => {
+export const getFolderTree = async ({
+  userId,
+  folderId = null,
+}) => {
   const root = folderId
     ? await getFolderById({ userId, folderId })
-    : { _id: null, name: "root", type: "folder" };
+    : {
+        _id: null,
+        name: "root",
+        type: "folder",
+      };
 
   const children = await buildTree(userId, root._id);
 
@@ -156,10 +188,7 @@ export const getFolderTree = async ({ userId, folderId = null }) => {
 ====================================================== */
 
 const deleteRecursively = async (userId, parentId) => {
-  const nodes = await Chunk.find({
-    userId,
-    parentId,
-  });
+  const nodes = await Chunk.find({ userId, parentId });
 
   for (const node of nodes) {
     if (node.type === "folder") {
@@ -167,17 +196,8 @@ const deleteRecursively = async (userId, parentId) => {
     }
   }
 
-  // delete children first
-  await Chunk.deleteMany({
-    userId,
-    parentId,
-  });
-
-  // delete the folder itself
-  await Chunk.deleteOne({
-    userId,
-    _id: parentId,
-  });
+  await Chunk.deleteMany({ userId, parentId });
+  await Chunk.deleteOne({ userId, _id: parentId });
 };
 
 const ensureNotDescendant = async (sourceId, targetId) => {
@@ -203,11 +223,16 @@ const buildTree = async (userId, parentId) => {
   }).sort({ type: 1, name: 1 });
 
   return Promise.all(
-    nodes.map(async (node) =>
-      node.type === "folder"
-        ? { ...node.toObject(), children: await buildTree(userId, node._id) }
-        : node
-    )
+    nodes.map(async (node) => {
+      if (node.type === "folder") {
+        return {
+          ...node.toObject(),
+          children: await buildTree(userId, node._id),
+        };
+      }
+
+      return node.toObject();
+    })
   );
 };
 

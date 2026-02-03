@@ -34,7 +34,7 @@ router.get("/:id", getFileById);
  */
 router.post(
   "/upload",
-  upload.single("file"),
+  upload,          // ✅ multer middleware (already handles .single("file"))
   uploadFile
 );
 

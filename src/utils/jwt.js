@@ -14,9 +14,14 @@ export const signAccessToken = (user) =>
 /**
  * Refresh token
  * - Expiry depends on remember flag
+ * - Returns token + expiresIn (ms)
  */
-export const signRefreshToken = (user, remember = false) =>
-  jwt.sign(
+export const signRefreshToken = (user, remember = false) => {
+  const expiresIn = remember
+    ? 7 * 24 * 60 * 60 * 1000 // 7 days
+    : 24 * 60 * 60 * 1000;   // 1 day
+
+  const token = jwt.sign(
     {
       sub: user._id,
       remember,
@@ -26,6 +31,9 @@ export const signRefreshToken = (user, remember = false) =>
       expiresIn: remember ? "7d" : "1d",
     }
   );
+
+  return { token, expiresIn };
+};
 
 export const verifyAccessToken = (token) =>
   jwt.verify(token, process.env.JWT_ACCESS_SECRET);
