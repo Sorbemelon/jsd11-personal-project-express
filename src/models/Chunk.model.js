@@ -9,11 +9,10 @@ const chunkSchema = new mongoose.Schema(
       index: true,
     },
 
-    // folder | file | chunk
-    type: {
-      type: String,
-      enum: ["folder", "file", "chunk"],
-      required: true,
+    itemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Item",
+      default: null,
       index: true,
     },
 
@@ -23,35 +22,9 @@ const chunkSchema = new mongoose.Schema(
       trim: true,
     },
 
-    parentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Chunk",
-      default: null,
-      index: true,
-    },
-
-    /* ---------- FILE METADATA ---------- */
-    mimeType: {
-      type: String,
-      required: function () {
-        return this.type === "file";
-      },
-    },
-
-    size: {
-      type: Number,
-      required: function () {
-        return this.type === "file";
-      },
-    },
-
     /* ---------- TRANSFORMED CONTENT ---------- */
     content: {
       type: String, // normalized text (for RAG/search)
-    },
-
-    rawJson: {
-      type: mongoose.Schema.Types.Mixed, // original transformed JSON
     },
 
     /* ---------- EMBEDDING STATUS ---------- */
@@ -67,29 +40,6 @@ const chunkSchema = new mongoose.Schema(
       lastAttemptAt: Date,
       updatedAt: Date,
       lastError: String,
-    },
-
-    /* ---------- STORAGE (FILES ONLY) ---------- */
-    storage: {
-      provider: {
-        type: String,
-        enum: ["s3"],
-        default: "s3",
-      },
-
-      uri: {
-        type: String, // S3 full URL
-        required: function () {
-          return this.type === "file";
-        },
-      },
-
-      key: {
-        type: String, // S3 object key
-        required: function () {
-          return this.type === "file";
-        },
-      },
     },
 
     order: {
@@ -110,8 +60,7 @@ const chunkSchema = new mongoose.Schema(
 );
 
 /* ---------- INDEXES ---------- */
-chunkSchema.index({ userId: 1, parentId: 1 });
-chunkSchema.index({ userId: 1, type: 1 });
+chunkSchema.index({ userId: 1, itemId: 1 });
 chunkSchema.index({ name: "text", content: "text" });
 
 export default mongoose.model("Chunk", chunkSchema);

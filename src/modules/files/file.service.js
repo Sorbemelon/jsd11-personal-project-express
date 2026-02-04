@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import path from "path";
+import Item from "../../models/Item.model.js";
 import Chunk from "../../models/Chunk.model.js";
 import { AppError } from "../../utils/error.js";
 import { transformFileToChunks } from "./file.transformer.js";
@@ -29,7 +30,7 @@ const generateUniqueFileName = async ({
     const suffix = crypto.randomBytes(4).toString("hex");
     filename = `${base}_${suffix}${ext}`;
 
-    exists = await Chunk.exists({
+    exists = await Item.exists({
       userId,
       parentId: parentId || null,
       name: filename,
@@ -61,7 +62,7 @@ export const uploadFile = async ({
   let folderKey = "";
 
   if (parentId) {
-    const folder = await Chunk.findOne({
+    const folder = await Item.findOne({
       _id: parentId,
       userId,
       type: "folder",
@@ -94,7 +95,7 @@ export const uploadFile = async ({
   const transformed = await transformFileToChunks(file);
 
   /* ---------- create FILE chunk ---------- */
-  const fileChunk = await Chunk.create({
+  const fileChunk = await Item.create({
     userId,
     type: "file",
     name: safeFileName,
@@ -103,7 +104,6 @@ export const uploadFile = async ({
     mimeType: file.mimetype,
     size: file.size,
 
-    content: transformed.content,
     rawJson: transformed.rawJson,
 
     storage: {
@@ -123,16 +123,12 @@ export const uploadFile = async ({
 
       await Chunk.create({
         userId,
-        type: "chunk",
-        parentId: fileChunk._id,
+        itemId: fileChunk._id,
         name: `${safeFileName} #${i + 1}`,
         content: chunk.content,
         order: i,
         embedding,
         isDeleted: false,
-        metadata: {
-          sourceFile: fileChunk._id,
-        },
       });
     }
   }
@@ -144,7 +140,7 @@ export const uploadFile = async ({
  * GET /files
  */
 export const listFiles = async ({ userId }) => {
-  return Chunk.find({
+  return Item.find({
     userId,
     type: "file",
     isDeleted: false,
@@ -155,7 +151,7 @@ export const listFiles = async ({ userId }) => {
  * GET /files/:id
  */
 export const getFileById = async ({ userId, fileId }) => {
-  const file = await Chunk.findOne({
+  const file = await Item.findOne({
     _id: fileId,
     userId,
     type: "file",
@@ -176,7 +172,7 @@ export const moveFile = async ({ userId, fileId, targetFolderId }) => {
   const file = await getFileById({ userId, fileId });
 
   if (targetFolderId) {
-    const folder = await Chunk.findOne({
+    const folder = await Item.findOne({
       _id: targetFolderId,
       userId,
       type: "folder",
@@ -203,7 +199,7 @@ export const moveFile = async ({ userId, fileId, targetFolderId }) => {
  * Hard delete (MongoDB + S3)
  */
 export const deleteFile = async (userId, fileId) => {
-  const file = await Chunk.findOne({
+  const file = await Item.findOne({
     _id: fileId,
     userId,
     type: "file",
@@ -227,12 +223,11 @@ export const deleteFile = async (userId, fileId) => {
 
   /* ---------- delete text chunks ---------- */
   await Chunk.deleteMany({
-    parentId: file._id,
-    type: "chunk",
+    itemId: file._id,
   });
 
   /* ---------- delete file document ---------- */
-  await Chunk.deleteOne({ _id: file._id });
+  await Item.deleteOne({ _id: file._id });
 
   return { success: true };
 };

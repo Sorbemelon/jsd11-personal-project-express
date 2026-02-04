@@ -2,8 +2,13 @@
 import axios from "axios";
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
-const EMBEDDING_MODEL = "models/embedding-001";
-const EXPECTED_DIMS = 3072;
+const EMBEDDING_MODEL = "models/text-embedding-001";
+const GENERATION_MODEL = "gemini-2.5-flash";
+const EXPECTED_EMBEDDING_DIMS = 3072;
+
+const baseUrl = process.env.GEMINI_API_BASE_URL || DEFAULT_BASE_URL
+const model = process.env.GEMINI_EMBEDDING_MODEL || GENERATION_MODEL
+
 
 /* ---------------- helpers ---------------- */
 
@@ -24,38 +29,48 @@ const getApiKeys = () =>
 /* ---------------- public API ---------------- */
 
 /**
- * Embed a single text chunk (SAFE)
+ * Embed a single text chunk
+ * Returns object compatible with Chunk.embedding schema
  */
-export const embedText = async (text) => {
+export const embedText = async (text, prevAttempts = 0) => {
+  const now = new Date();
   const trimmed = String(text || "").trim();
 
+  /* ---------- empty text ---------- */
   if (!trimmed) {
     return {
-      status: "SKIPPED",
-      reason: "EMPTY_TEXT",
+      status: "FAILED",
+      dims: EXPECTED_EMBEDDING_DIMS,
       vector: null,
+      attempts: prevAttempts + 1,
+      lastAttemptAt: now,
+      updatedAt: now,
+      lastError: "EMPTY_TEXT",
     };
   }
 
+  /* ---------- API keys ---------- */
   const apiKeys = getApiKeys();
   if (!apiKeys.length) {
     return {
-      status: "ERROR",
-      reason: "NO_API_KEY",
+      status: "FAILED",
+      dims: EXPECTED_EMBEDDING_DIMS,
       vector: null,
+      attempts: prevAttempts + 1,
+      lastAttemptAt: now,
+      updatedAt: now,
+      lastError: "NO_API_KEY",
     };
   }
 
+  /* ---------- request ---------- */
   const request = async (key) => {
     const { data } = await axios.post(
-      `${DEFAULT_BASE_URL}/v1beta/models/${EMBEDDING_MODEL}:embedContent?key=${key}`,
+      `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:embedContent?key=${encodeURIComponent(key)}`,
       {
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: trimmed }],
-          },
-        ],
+        content: {
+          parts: [{ text: trimmed }],
+        },
       },
       { timeout: 25000 }
     );
@@ -63,41 +78,56 @@ export const embedText = async (text) => {
   };
 
   let data = null;
+  let lastError = null;
 
   for (const key of apiKeys) {
     try {
       data = await request(key);
       break;
     } catch (err) {
+      lastError = err?.message || "REQUEST_FAILED";
       if (!isRetryable(err)) break;
     }
   }
 
-  const vector =
-    data?.embedding?.values ||
-    data?.embeddings?.[0]?.values ||
-    null;
+  const vector = data?.embedding?.values ?? null;
 
+  /* ---------- invalid response ---------- */
   if (!Array.isArray(vector)) {
     return {
-      status: "ERROR",
-      reason: "INVALID_RESPONSE",
+      status: "FAILED",
+      dims: EXPECTED_EMBEDDING_DIMS,
       vector: null,
+      attempts: prevAttempts + 1,
+      lastAttemptAt: now,
+      updatedAt: now,
+      lastError: lastError || "INVALID_RESPONSE",
     };
   }
 
-  if (vector.length !== EXPECTED_DIMS) {
+  /* ---------- dimension mismatch ---------- */
+  if (vector.length !== EXPECTED_EMBEDDING_DIMS) {
     return {
-      status: "ERROR",
-      reason: "DIM_MISMATCH",
+      status: "FAILED",
+      dims: vector.length,
       vector: null,
+      attempts: prevAttempts + 1,
+      lastAttemptAt: now,
+      updatedAt: now,
+      lastError: "DIM_MISMATCH",
     };
   }
 
+  /* ---------- success ---------- */
   return {
     status: "READY",
+    dims: EXPECTED_EMBEDDING_DIMS,
     vector,
+    attempts: prevAttempts + 1,
+    lastAttemptAt: now,
+    updatedAt: now,
+    lastError: null,
   };
 };
 
-export const EMBEDDING_DIMS = EXPECTED_DIMS;
+export const EMBEDDING_DIMS = EXPECTED_EMBEDDING_DIMS;

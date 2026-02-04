@@ -10,6 +10,7 @@ export const sendMessage = async ({
   userId,
   message,
   folderId = null,
+  fileIds = [],          // ⭐ NEW: selected file IDs
   limit = 5,
 }) => {
   if (!message || !message.trim()) {
@@ -27,6 +28,7 @@ export const sendMessage = async ({
       userId,
       query: message,
       folderId,
+      fileIds,            // ⭐ pass to retriever
       limit,
     });
   } catch (err) {
@@ -88,7 +90,7 @@ export const sendMessage = async ({
     sources: hasContext
       ? contextChunks.map((c) => ({
           id: c._id,
-          fileId: c.parentId,
+          fileId: c.itemId || null,     // ⭐ FIX: Chunk uses itemId, not parentId
           folderId: c.metadata?.folderId || null,
           score: c.score,
           metadata: c.metadata || {},

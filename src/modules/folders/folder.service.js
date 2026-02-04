@@ -1,4 +1,4 @@
-import Chunk from "../../models/Chunk.model.js";
+import Item from "../../models/Item.model.js";
 import { AppError } from "../../utils/error.js";
 import {
   createS3Folder,
@@ -21,7 +21,7 @@ export const createFolder = async ({
   let parentKey = "";
 
   if (parentId) {
-    const parent = await Chunk.findOne({
+    const parent = await Item.findOne({
       _id: parentId,
       userId,
       type: "folder",
@@ -42,7 +42,7 @@ export const createFolder = async ({
 
   await createS3Folder(folderKey);
 
-  return Chunk.create({
+  return Item.create({
     userId,
     type: "folder",
     name: safeName,
@@ -60,7 +60,7 @@ export const createFolder = async ({
    READ
 ====================================================== */
 export const getFolderById = async ({ userId, folderId }) => {
-  const folder = await Chunk.findOne({
+  const folder = await Item.findOne({
     _id: folderId,
     userId,
     type: "folder",
@@ -78,7 +78,7 @@ export const listFolderContents = async ({
   userId,
   parentId = null,
 }) => {
-  const items = await Chunk.find({
+  const items = await Item.find({
     userId,
     parentId,
     type: { $in: ["folder", "file"] },
@@ -111,7 +111,7 @@ export const moveFolder = async ({
   const folder = await getFolderById({ userId, folderId });
 
   if (targetParentId) {
-    const target = await Chunk.findOne({
+    const target = await Item.findOne({
       _id: targetParentId,
       userId,
       type: "folder",
@@ -188,7 +188,7 @@ export const getFolderTree = async ({
 ====================================================== */
 
 const deleteRecursively = async (userId, parentId) => {
-  const nodes = await Chunk.find({ userId, parentId });
+  const nodes = await Item.find({ userId, parentId });
 
   for (const node of nodes) {
     if (node.type === "folder") {
@@ -196,12 +196,12 @@ const deleteRecursively = async (userId, parentId) => {
     }
   }
 
-  await Chunk.deleteMany({ userId, parentId });
-  await Chunk.deleteOne({ userId, _id: parentId });
+  await Item.deleteMany({ userId, parentId });
+  await Item.deleteOne({ userId, _id: parentId });
 };
 
 const ensureNotDescendant = async (sourceId, targetId) => {
-  let current = await Chunk.findById(targetId);
+  let current = await Item.findById(targetId);
 
   while (current?.parentId) {
     if (String(current.parentId) === String(sourceId)) {
@@ -210,12 +210,12 @@ const ensureNotDescendant = async (sourceId, targetId) => {
         400
       );
     }
-    current = await Chunk.findById(current.parentId);
+    current = await Item.findById(current.parentId);
   }
 };
 
 const buildTree = async (userId, parentId) => {
-  const nodes = await Chunk.find({
+  const nodes = await Item.find({
     userId,
     parentId,
     type: { $in: ["folder", "file"] },
@@ -241,13 +241,13 @@ const buildTree = async (userId, parentId) => {
 ====================================================== */
 const countFolderStats = async (userId, folderId) => {
   const [files, folders] = await Promise.all([
-    Chunk.countDocuments({
+    Item.countDocuments({
       userId,
       parentId: folderId,
       type: "file",
       isDeleted: false,
     }),
-    Chunk.countDocuments({
+    Item.countDocuments({
       userId,
       parentId: folderId,
       type: "folder",

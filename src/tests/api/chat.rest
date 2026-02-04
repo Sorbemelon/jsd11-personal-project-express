@@ -3,5 +3,6 @@ POST  http://localhost:3000/api/v1/chat
 Content-Type: application/json
 
  {
-   "message": "What is MERN stack. Give a short answer"
+   "message": "What is MERN stack. Is Node in this stack too?",
+   "fileIds": "69832814bcbfb72ff41315e6"
  }

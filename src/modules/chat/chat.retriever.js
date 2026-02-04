@@ -1,33 +1,73 @@
 // src/modules/chat/chat.retriever.js
+import mongoose from "mongoose";
 import Chunk from "../../models/Chunk.model.js";
 import { embedText } from "../embeddings/embedding.service.js";
 
 /**
- * Retrieve relevant chunks using vector search
+ * Retrieve relevant chunks using MongoDB Atlas Vector Search
  */
 export const retrieveRelevantChunks = async ({
   userId,
   query,
-  folderId = null,
+  folderId = null,   // (future use)
+  fileIds = [],      // restrict to selected files
   limit = 5,
 }) => {
-  const queryVector = await embedText({ text: query });
+  /* ======================================================
+     STEP 1: Embed query
+  ====================================================== */
+
+  const embeddingResult = await embedText(query);
+
+  if (
+    embeddingResult.status !== "READY" ||
+    !Array.isArray(embeddingResult.vector)
+  ) {
+    // Safe fallback → no context instead of crash
+    return [];
+  }
+
+  const queryVector = embeddingResult.vector;
 
   const numCandidates = Math.max(50, limit * 10);
 
+  /* ======================================================
+     STEP 2: Normalize fileIds (FIX $in error)
+  ====================================================== */
+
+  let normalizedFileIds = [];
+
+  if (Array.isArray(fileIds)) {
+    normalizedFileIds = fileIds.filter(Boolean);
+  } else if (fileIds) {
+    normalizedFileIds = [fileIds];
+  }
+
+  // Convert to ObjectId safely
+  normalizedFileIds = normalizedFileIds
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  /* ======================================================
+     STEP 3: Build filter
+  ====================================================== */
+
   const filter = {
-    userId,
-    type: "chunk",
+    userId: new mongoose.Types.ObjectId(userId),
     isDeleted: false,
     "embedding.status": "READY",
   };
 
-  // Optional folder scope
-  if (folderId) {
-    filter.parentId = folderId;
+  // Restrict to selected files if provided
+  if (normalizedFileIds.length > 0) {
+    filter.itemId = { $in: normalizedFileIds };
   }
 
-  return Chunk.aggregate([
+  /* ======================================================
+     STEP 4: Vector search
+  ====================================================== */
+
+  const results = await Chunk.aggregate([
     {
       $vectorSearch: {
         index: "chunks_embedding_vector_index",
@@ -41,11 +81,13 @@ export const retrieveRelevantChunks = async ({
     {
       $project: {
         _id: 1,
-        parentId: 1,
+        itemId: 1,
         content: 1,
-        metadata: 1,
         score: { $meta: "vectorSearchScore" },
       },
     },
   ]);
+
+  console.log("Vector results count:", results.length);
+  return results;
 };
