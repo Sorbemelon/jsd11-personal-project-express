@@ -10,7 +10,7 @@ export const sendMessage = async ({
   userId,
   message,
   folderId = null,
-  fileIds = [],          // ⭐ NEW: selected file IDs
+  fileIds,
   limit = 5,
 }) => {
   if (!message || !message.trim()) {
@@ -18,7 +18,7 @@ export const sendMessage = async ({
   }
 
   /* ======================================================
-     STEP 1: Vector retrieval (SAFE)
+     STEP 1: Vector retrieval
   ====================================================== */
 
   let contextChunks = [];
@@ -28,25 +28,40 @@ export const sendMessage = async ({
       userId,
       query: message,
       folderId,
-      fileIds,            // ⭐ pass to retriever
+      fileIds,
       limit,
     });
   } catch (err) {
-    console.warn("Vector retrieval failed, fallback to no-context chat", {
-      message: err?.message,
-    });
+    console.warn("Vector retrieval failed", { message: err?.message });
     contextChunks = [];
   }
 
   const hasContext = contextChunks.length > 0;
 
-  const contextText = hasContext
-    ? contextChunks.map((c) => c.content).join("\n\n")
-    : "";
+  /* ======================================================
+     🔒 STEP 1.5: RAG SAFETY GUARD
+     If user explicitly selected files BUT nothing retrieved
+     → DO NOT allow normal LLM answering
+  ====================================================== */
+
+  const ragRequested = Array.isArray(fileIds);
+
+  if (ragRequested && !hasContext) {
+    return {
+      question: message,
+      answer: "I don't know based on the provided documents.",
+      ragUsed: true,     // RAG mode was attempted
+      sources: [],
+    };
+  }
 
   /* ======================================================
      STEP 2: Prompt construction
   ====================================================== */
+
+  const contextText = hasContext
+    ? contextChunks.map((c) => c.content).join("\n\n")
+    : "";
 
   const prompt = hasContext
     ? [
@@ -90,7 +105,7 @@ export const sendMessage = async ({
     sources: hasContext
       ? contextChunks.map((c) => ({
           id: c._id,
-          fileId: c.itemId || null,     // ⭐ FIX: Chunk uses itemId, not parentId
+          fileId: c.itemId || null,
           folderId: c.metadata?.folderId || null,
           score: c.score,
           metadata: c.metadata || {},

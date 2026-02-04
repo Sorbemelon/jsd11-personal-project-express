@@ -9,8 +9,8 @@ import { embedText } from "../embeddings/embedding.service.js";
 export const retrieveRelevantChunks = async ({
   userId,
   query,
-  folderId = null,   // (future use)
-  fileIds = [],      // restrict to selected files
+  folderId = null,
+  fileIds,
   limit = 5,
 }) => {
   /* ======================================================
@@ -23,48 +23,50 @@ export const retrieveRelevantChunks = async ({
     embeddingResult.status !== "READY" ||
     !Array.isArray(embeddingResult.vector)
   ) {
-    // Safe fallback → no context instead of crash
     return [];
   }
 
   const queryVector = embeddingResult.vector;
-
   const numCandidates = Math.max(50, limit * 10);
 
   /* ======================================================
-     STEP 2: Normalize fileIds (FIX $in error)
+     STEP 2: SECURITY — require explicit fileIds
+     - undefined  → block
+     - []         → block
   ====================================================== */
 
-  let normalizedFileIds = [];
-
-  if (Array.isArray(fileIds)) {
-    normalizedFileIds = fileIds.filter(Boolean);
-  } else if (fileIds) {
-    normalizedFileIds = [fileIds];
+  if (!Array.isArray(fileIds) || fileIds.length === 0) {
+    console.warn("RAG blocked: no fileIds provided");
+    return [];
   }
 
-  // Convert to ObjectId safely
-  normalizedFileIds = normalizedFileIds
+  /* ======================================================
+     STEP 3: Normalize ObjectIds
+  ====================================================== */
+
+  const normalizedFileIds = fileIds
     .filter((id) => mongoose.Types.ObjectId.isValid(id))
     .map((id) => new mongoose.Types.ObjectId(id));
 
+  // If none valid → block
+  if (normalizedFileIds.length === 0) {
+    console.warn("RAG blocked: invalid fileIds");
+    return [];
+  }
+
   /* ======================================================
-     STEP 3: Build filter
+     STEP 4: Build filter
   ====================================================== */
 
   const filter = {
     userId: new mongoose.Types.ObjectId(userId),
     isDeleted: false,
     "embedding.status": "READY",
+    itemId: { $in: normalizedFileIds }, // ALWAYS restrict
   };
 
-  // Restrict to selected files if provided
-  if (normalizedFileIds.length > 0) {
-    filter.itemId = { $in: normalizedFileIds };
-  }
-
   /* ======================================================
-     STEP 4: Vector search
+     STEP 5: Vector search
   ====================================================== */
 
   const results = await Chunk.aggregate([

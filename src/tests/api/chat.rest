@@ -4,5 +4,5 @@ Content-Type: application/json
 
  {
    "message": "What is MERN stack. Is Node in this stack too?",
-   "fileIds": "69832814bcbfb72ff41315e6"
+   "fileIds": ["69832814bcbfb72ff41315e6"]
  }
