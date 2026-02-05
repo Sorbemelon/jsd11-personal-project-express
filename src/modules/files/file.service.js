@@ -12,8 +12,11 @@ import { embedText } from "../embeddings/embedding.service.js";
 ====================================================== */
 
 /**
- * Generate a collision-safe filename
- * Example: report.pdf → report_8f3a2c9e.pdf
+ * Generate a collision-safe filename using numeric suffix
+ * Example:
+ *   report.pdf
+ *   report (1).pdf
+ *   report (2).pdf
  */
 const generateUniqueFileName = async ({
   userId,
@@ -23,20 +26,37 @@ const generateUniqueFileName = async ({
   const ext = path.extname(originalName);
   const base = path.basename(originalName, ext);
 
+  // 1️⃣ If original name doesn't exist → use it directly
+  const originalExists = await Item.exists({
+    userId,
+    parentId: parentId || null,
+    name: originalName,
+    type: "file",
+    isDeleted: false,
+  });
+
+  if (!originalExists) {
+    return originalName;
+  }
+
+  // 2️⃣ Find next available numeric suffix
+  let counter = 1;
   let filename;
-  let exists = true;
 
-  while (exists) {
-    const suffix = crypto.randomBytes(4).toString("hex");
-    filename = `${base}_${suffix}${ext}`;
+  while (true) {
+    filename = `${base} (${counter})${ext}`;
 
-    exists = await Item.exists({
+    const exists = await Item.exists({
       userId,
       parentId: parentId || null,
       name: filename,
       type: "file",
       isDeleted: false,
     });
+
+    if (!exists) break;
+
+    counter++;
   }
 
   return filename;

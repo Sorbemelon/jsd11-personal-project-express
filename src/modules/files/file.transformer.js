@@ -1,5 +1,5 @@
 import path from "path";
-import { PDFParse } from "pdf-parse";
+import pdf from "pdf-parse/lib/pdf-parse.js";
 import mammoth from "mammoth";
 import { parse } from "csv-parse/sync";
 import { AppError } from "../../utils/error.js";
@@ -23,10 +23,10 @@ export const transformFileToChunks = async (file, options = {}) => {
 
     case ".pdf": {
       const result = await parsePDF(file.buffer);
-      text = result.text;
+      text = result.text || "";
       rawJson = {
-        metadata: result.metadata,
-        pages: result.numpages,
+        metadata: result.metadata ?? null,
+        pages: result.numpages ?? null,
       };
       break;
     }
@@ -56,10 +56,11 @@ export const transformFileToChunks = async (file, options = {}) => {
       throw new AppError(`Unsupported file type: ${ext}`, 400);
   }
 
-  const chunks = splitIntoChunks(text, options);
+  const normalized = normalizeText(text);
+  const chunks = splitIntoChunks(normalized, options);
 
   return {
-    content: normalizeText(text),
+    content: normalized,
     rawJson,
     chunks,
   };
@@ -71,9 +72,27 @@ const parseTXT = (buffer) => {
   return buffer.toString("utf-8");
 };
 
+/**
+ * Stable PDF parser using pdf-parse v1 runtime entry
+ * Avoids test harness import crash in ESM
+ */
 const parsePDF = async (buffer) => {
-  const parsed = await PDFParse(buffer);
-  return parsed;
+  try {
+    const data = await pdf(buffer);
+
+    // Guard against scanned PDFs returning empty text
+    if (!data?.text || data.text.trim().length === 0) {
+      return {
+        text: "",
+        numpages: data?.numpages ?? null,
+        metadata: data?.metadata ?? null,
+      };
+    }
+
+    return data;
+  } catch (err) {
+    throw new AppError("Failed to parse PDF file", 400);
+  }
 };
 
 const parseDOCX = async (buffer) => {
@@ -116,16 +135,20 @@ const splitIntoChunks = (
   text,
   { chunkSize = 500, overlap = 50 } = {}
 ) => {
-  const cleaned = normalizeText(text);
+  if (!text) return [];
+
+  if (overlap >= chunkSize) {
+    throw new AppError("overlap must be smaller than chunkSize", 400);
+  }
 
   const chunks = [];
   let start = 0;
 
-  while (start < cleaned.length) {
+  while (start < text.length) {
     const end = start + chunkSize;
 
     chunks.push({
-      content: cleaned.slice(start, end),
+      content: text.slice(start, end),
     });
 
     start += chunkSize - overlap;
