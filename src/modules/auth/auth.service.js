@@ -1,7 +1,6 @@
 import User from "../../models/User.model.js";
 import { hashPassword, comparePassword } from "../../utils/hash.js";
 import {
-  signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
 } from "../../utils/jwt.js";
@@ -13,9 +12,7 @@ import { createFolder } from "../folders/folder.service.js";
 ====================================================== */
 export const register = async ({ email, password, name }) => {
   const existing = await User.findOne({ email });
-  if (existing) {
-    throw new AppError("Email already registered", 409);
-  }
+  if (existing) throw new AppError("Email already registered", 409);
 
   const hashed = await hashPassword(password);
 
@@ -32,85 +29,62 @@ export const register = async ({ email, password, name }) => {
       parentId: null,
       newUser: true,
     });
-  } catch (err) {
+  } catch {
     await User.findByIdAndDelete(user._id);
     throw new AppError("Account setup failed", 500);
   }
 
-  // 🔐 tokens are created by controller
-  return {
-    user: sanitizeUser(user),
-  };
+  return { user };
 };
 
 /* ======================================================
    LOGIN
 ====================================================== */
 export const login = async ({ email, password, remember = false }) => {
-  const user = await User.findOne({ email }).select("+password");
-
-  if (!user) {
-    throw new AppError("Invalid email or password", 401);
-  }
+  const user = await User.findOne({ email }).select("+password +refreshToken");
+  if (!user) throw new AppError("Invalid email or password", 401);
 
   const valid = await comparePassword(password, user.password);
-  if (!valid) {
-    throw new AppError("Invalid email or password", 401);
-  }
+  if (!valid) throw new AppError("Invalid email or password", 401);
 
-  // refresh token rotation
-  const refreshToken = signRefreshToken(user, remember);
-  user.refreshToken = refreshToken;
+  const refresh = signRefreshToken(user, remember);
+
+  user.refreshToken = refresh.token;
   await user.save();
 
-  return {
-    user: sanitizeUser(user),
-  };
+  return { user, refresh };
 };
 
 /* ======================================================
    REFRESH TOKEN
 ====================================================== */
-export const refreshToken = async ({ token }) => {
-  if (!token) {
-    throw new AppError("Refresh token required", 401);
-  }
+export const refreshSession = async ({ token }) => {
+  if (!token) throw new AppError("Refresh token required", 401);
 
   const payload = verifyRefreshToken(token);
 
-  const user = await User.findById(payload.sub);
+  const user = await User.findById(payload.sub).select("+refreshToken");
   if (!user || user.refreshToken !== token) {
     throw new AppError("Invalid refresh token", 401);
   }
 
-  // rotate refresh token
-  const newRefreshToken = signRefreshToken(user, payload.remember);
-  user.refreshToken = newRefreshToken;
+  const newRefresh = signRefreshToken(user, payload.remember);
+
+  user.refreshToken = newRefresh.token;
   await user.save();
 
-  return {
-    userId: user._id,
-    remember: payload.remember,
-  };
+  return { user, newRefresh };
 };
 
 /* ======================================================
    LOGOUT
 ====================================================== */
 export const logout = async (userId) => {
-  const user = await User.findByIdAndUpdate(
-    userId,
-    { refreshToken: null },
-    { new: true }
-  );
-
-  if (!user) {
-    throw new AppError("User not found", 404);
-  }
+  await User.findByIdAndUpdate(userId, { refreshToken: null });
 };
 
 /* ======================================================
-   HELPERS
+   HELPER
 ====================================================== */
 export const sanitizeUser = (user) => {
   const obj = user.toObject();
