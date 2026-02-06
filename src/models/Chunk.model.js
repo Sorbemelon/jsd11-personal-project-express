@@ -24,7 +24,7 @@ const chunkSchema = new mongoose.Schema(
 
     /* ---------- TRANSFORMED CONTENT ---------- */
     content: {
-      type: String, // normalized text (for RAG/search)
+      type: String, // normalized text (for making chunk)
     },
 
     /* ---------- EMBEDDING STATUS ---------- */

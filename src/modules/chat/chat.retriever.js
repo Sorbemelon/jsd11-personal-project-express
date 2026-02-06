@@ -13,9 +13,7 @@ export const retrieveRelevantChunks = async ({
   fileIds,
   limit = 5,
 }) => {
-  /* ======================================================
-     STEP 1: Embed query
-  ====================================================== */
+  /* STEP 1: Embed query */
 
   const embeddingResult = await embedText(query);
 
@@ -29,20 +27,16 @@ export const retrieveRelevantChunks = async ({
   const queryVector = embeddingResult.vector;
   const numCandidates = Math.max(50, limit * 10);
 
-  /* ======================================================
-     STEP 2: SECURITY — require explicit fileIds
+  /* STEP 2: SECURITY — require explicit fileIds
      - undefined  → block
-     - []         → block
-  ====================================================== */
+     - []         → block */
 
   if (!Array.isArray(fileIds) || fileIds.length === 0) {
     console.warn("RAG blocked: no fileIds provided");
     return [];
   }
 
-  /* ======================================================
-     STEP 3: Normalize ObjectIds
-  ====================================================== */
+  /* STEP 3: Normalize ObjectIds */
 
   const normalizedFileIds = fileIds
     .filter((id) => mongoose.Types.ObjectId.isValid(id))
@@ -54,9 +48,7 @@ export const retrieveRelevantChunks = async ({
     return [];
   }
 
-  /* ======================================================
-     STEP 4: Build filter
-  ====================================================== */
+  /* STEP 4: Build filter */
 
   const filter = {
     userId: new mongoose.Types.ObjectId(userId),
@@ -65,9 +57,7 @@ export const retrieveRelevantChunks = async ({
     itemId: { $in: normalizedFileIds }, // ALWAYS restrict
   };
 
-  /* ======================================================
-     STEP 5: Vector search
-  ====================================================== */
+  /* STEP 5: Vector search */
 
   const results = await Chunk.aggregate([
     {

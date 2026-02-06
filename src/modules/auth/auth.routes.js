@@ -10,16 +10,12 @@ import { authenticate } from "./auth.middleware.js";
 
 const router = Router();
 
-/**
- * Public auth routes
- */
+/* Public auth routes */
 router.post("/register", register);
 router.post("/login", login);
 router.post("/refresh", refreshToken);
 
-/**
- * Protected auth routes
- */
+/* Protected auth routes */
 router.use(authenticate);
 
 router.post("/logout", logout);

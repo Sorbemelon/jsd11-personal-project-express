@@ -1,4 +1,3 @@
-// auth.middleware.js
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import {
   verifyAccessToken,
@@ -20,11 +19,7 @@ const cookieOptions = {
 export const authenticate = asyncHandler(async (req, res, next) => {
   const accessToken = req.cookies?.accessToken;
 
-  /**
-   * =====================================================
-   * 1) TRY ACCESS TOKEN
-   * =====================================================
-   */
+  /* 1) TRY ACCESS TOKEN */
   if (accessToken) {
     try {
       const payload = verifyAccessToken(accessToken);
@@ -47,11 +42,7 @@ export const authenticate = asyncHandler(async (req, res, next) => {
     }
   }
 
-  /**
-   * =====================================================
-   * 2) TRY REFRESH TOKEN
-   * =====================================================
-   */
+  /* 2) TRY REFRESH TOKEN */
   const refreshToken = req.cookies?.refreshToken;
 
   if (!refreshToken) {
@@ -67,32 +58,24 @@ export const authenticate = asyncHandler(async (req, res, next) => {
 
   const user = await User.findById(payload.sub).select("+refreshToken");
 
-  // ✅ CRITICAL NULL CHECK (prevents crash)
+  // CRITICAL NULL CHECK (prevents crash)
   if (!user) {
     throw new AppError("Invalid refresh token", 401);
   }
 
-  // ✅ TOKEN MISMATCH CHECK
+  // TOKEN MISMATCH CHECK
   if (!user.refreshToken || user.refreshToken !== refreshToken) {
     throw new AppError("Invalid refresh token", 401);
   }
 
-  /**
-   * =====================================================
-   * 3) ROTATE TOKENS
-   * =====================================================
-   */
+  /* 3) ROTATE TOKENS */
   const newAccessToken = signAccessToken(user);
   const newRefresh = signRefreshToken(user, payload.remember);
 
   user.refreshToken = newRefresh.token;
   await user.save();
 
-  /**
-   * =====================================================
-   * 4) SET NEW COOKIES
-   * =====================================================
-   */
+  /* 4) SET NEW COOKIES */
   res
     .cookie("accessToken", newAccessToken, {
       ...cookieOptions,
@@ -103,11 +86,7 @@ export const authenticate = asyncHandler(async (req, res, next) => {
       maxAge: newRefresh.expiresIn,
     });
 
-  /**
-   * =====================================================
-   * 5) ATTACH USER TO REQUEST
-   * =====================================================
-   */
+  /* 5) ATTACH USER TO REQUEST */
   req.user = {
     id: user._id.toString(),
     email: user.email,

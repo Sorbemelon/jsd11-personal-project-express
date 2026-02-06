@@ -7,9 +7,7 @@ import {
 import { AppError } from "../../utils/error.js";
 import { createFolder } from "../folders/folder.service.js";
 
-/* ======================================================
-   REGISTER
-====================================================== */
+/* REGISTER */
 export const register = async ({ email, password, name }) => {
   const existing = await User.findOne({ email });
   if (existing) throw new AppError("Email already registered", 409);
@@ -37,9 +35,7 @@ export const register = async ({ email, password, name }) => {
   return { user };
 };
 
-/* ======================================================
-   LOGIN
-====================================================== */
+/* LOGIN */
 export const login = async ({ email, password, remember = false }) => {
   const user = await User.findOne({ email }).select("+password +refreshToken");
   if (!user) throw new AppError("Invalid email or password", 401);
@@ -55,9 +51,7 @@ export const login = async ({ email, password, remember = false }) => {
   return { user, refresh };
 };
 
-/* ======================================================
-   REFRESH TOKEN
-====================================================== */
+/* REFRESH TOKEN */
 export const refreshSession = async ({ token }) => {
   if (!token) throw new AppError("Refresh token required", 401);
 
@@ -76,16 +70,12 @@ export const refreshSession = async ({ token }) => {
   return { user, newRefresh };
 };
 
-/* ======================================================
-   LOGOUT
-====================================================== */
+/* LOGOUT */
 export const logout = async (userId) => {
   await User.findByIdAndUpdate(userId, { refreshToken: null });
 };
 
-/* ======================================================
-   HELPER
-====================================================== */
+/* HELPER */
 export const sanitizeUser = (user) => {
   const obj = user.toObject();
   delete obj.password;

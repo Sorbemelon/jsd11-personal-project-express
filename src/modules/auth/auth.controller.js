@@ -17,9 +17,7 @@ const cookieOptions = {
   sameSite: isProd ? "none" : "lax",
 };
 
-/* ======================================================
-   REGISTER
-====================================================== */
+/* REGISTER */
 export const register = async (req, res, next) => {
   try {
     const { user } = await registerService(req.body);
@@ -41,9 +39,7 @@ export const register = async (req, res, next) => {
   }
 };
 
-/* ======================================================
-   LOGIN
-====================================================== */
+/* LOGIN */
 export const login = async (req, res, next) => {
   try {
     const { user, refresh } = await loginService(req.body);
@@ -68,9 +64,7 @@ export const login = async (req, res, next) => {
   }
 };
 
-/* ======================================================
-   REFRESH TOKEN
-====================================================== */
+/* REFRESH TOKEN */
 export const refreshToken = async (req, res, next) => {
   try {
     const { user, newRefresh } = await refreshSession({
@@ -94,9 +88,7 @@ export const refreshToken = async (req, res, next) => {
   }
 };
 
-/* ======================================================
-   LOGOUT
-====================================================== */
+/* LOGOUT */
 export const logout = async (req, res, next) => {
   try {
     if (req.user?.id) await logoutService(req.user.id);
@@ -111,9 +103,7 @@ export const logout = async (req, res, next) => {
   }
 };
 
-/* ======================================================
-   ME
-====================================================== */
+/* ME */
 export const me = async (req, res) => {
   res.status(200).json({ user: req.user ?? null });
 };

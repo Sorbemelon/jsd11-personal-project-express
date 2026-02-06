@@ -1,4 +1,3 @@
-// src/modules/embeddings/embedding.service.js
 import axios from "axios";
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";

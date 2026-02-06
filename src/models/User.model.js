@@ -35,7 +35,6 @@ const userSchema = new mongoose.Schema(
     },
 
     /**
-     * 🧠 Optional but recommended
      * - Increment to invalidate ALL refresh tokens
      * - Useful for "logout all devices"
      */
@@ -61,7 +60,7 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// 🔍 Efficient auth lookups
+// Efficient auth lookups
 userSchema.index({ email: 1, isActive: 1 });
 
 export default mongoose.model("User", userSchema);
