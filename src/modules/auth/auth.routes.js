@@ -6,19 +6,20 @@ import {
   logout,
   me,
 } from "./auth.controller.js";
-import { authenticate } from "./auth.middleware.js";
+import { authenticate, optionalAuth } from "./auth.middleware.js";
 
 const router = Router();
 
-/* Public auth routes */
+/* PUBLIC AUTH ROUTES */
 router.post("/register", register);
 router.post("/login", login);
 router.post("/refresh", refreshToken);
 
-/* Protected auth routes */
-router.use(authenticate);
+/* /me must NOT use strict authenticate
+   otherwise it throws 401 when not logged in */
+router.get("/me", optionalAuth, me);
 
-router.post("/logout", logout);
-router.get("/me", me);
+/* PROTECTED AUTH ROUTES */
+router.post("/logout", authenticate, logout);
 
 export default router;
